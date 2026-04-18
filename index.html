@@ -123,6 +123,18 @@ select:focus{box-shadow:0 0 0 2px var(--b)}
 .act-label{font-size:11px;padding:2px 7px;border-radius:20px;background:var(--b-bg);color:var(--b-t)}
 .naki-label{font-size:11px;padding:2px 7px;border-radius:20px;background:var(--tl-bg);color:var(--tl)}
 .prow-body{padding:10px 14px;display:grid;grid-template-columns:1fr 2fr 1fr;gap:14px;align-items:start}
+/* ツモ+捨てペア表示 */
+.tsumo-disc-col{display:flex;flex-direction:column;gap:0;}
+.tsumo-row{display:flex;gap:0;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;min-height:24px;}
+.tsumo-row::-webkit-scrollbar{height:2px;}
+.tsumo-row::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:1px;}
+.td-pair{display:inline-flex;flex-direction:column;align-items:center;margin-right:1px;}
+.td-tsumo{font-size:20px;line-height:1.3;}
+.td-disc{font-size:20px;line-height:1.3;}
+.td-disc.naki{background:var(--r-bg);border-radius:3px;color:var(--r);}
+.td-disc.last-act{background:var(--a-bg);border-radius:3px;}
+.td-disc.tsumo-cut{opacity:.55;}
+.td-arrow{font-size:11px;color:var(--tx3);line-height:1;margin:-1px 0;}
 @media(max-width:700px){
   .prow-body{grid-template-columns:1fr;gap:6px}
   .mgrid{grid-template-columns:repeat(2,1fr)}
@@ -159,6 +171,33 @@ select:focus{box-shadow:0 0 0 2px var(--b)}
 .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;margin-right:4px;margin-bottom:4px}
 .tag.am{background:var(--a-bg);color:var(--a-t)}.tag.gr{background:var(--g-bg);color:var(--g)}
 #ph-input{display:none}#ph-final{display:none}#ph-player{display:none}
+/* フローティング再生コントロール */
+#float-ctrl{
+  display:none;position:fixed;bottom:0;left:0;right:0;z-index:100;
+  background:var(--sf);border-top:1px solid var(--bd2);
+  padding:8px 12px 10px;
+  box-shadow:0 -4px 16px rgba(0,0,0,.12);
+}
+#float-ctrl .fc-row1{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
+#float-ctrl .fc-row2{display:flex;align-items:center;gap:8px;}
+#float-ctrl input[type=range]{flex:1;accent-color:var(--b);}
+#float-ctrl .fc-lbl{font-size:12px;color:var(--tx3);white-space:nowrap;}
+#float-ctrl .fc-desc{font-size:13px;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#float-ctrl button{padding:8px 14px;font-size:18px;}
+#float-ctrl #fc-play{font-size:14px;padding:8px 16px;background:var(--b);border-color:var(--b);color:#e6f1fb;}
+/* 再生中はプレイヤーカードを固定高さ+スクロールなしに */
+body.playing-mode{overflow:hidden;}
+body.playing-mode .wrap{padding-bottom:90px;}
+@media print{
+  body>*{display:none!important}
+  #print-frame{display:block!important;position:static!important;left:auto!important;top:auto!important;width:100%!important;}
+  #print-frame #report-inner{
+    padding:12mm 14mm!important;
+    max-width:100%!important;
+    font-size:11pt!important;
+  }
+  @page{size:A4;margin:10mm;}
+}
 </style>
 </head>
 <body>
@@ -267,6 +306,24 @@ select:focus{box-shadow:0 0 0 2px var(--b)}
 <!-- ③ 再生 -->
 <div id="ph-player">
   <button class="back-btn" onclick="backToFinal()">← ② 終局データ入力に戻る</button>
+  <!-- フローティングコントロール（再生時に表示） -->
+  <div id="float-ctrl">
+    <div class="fc-row1">
+      <button onclick="stepTo(0)" id="fc-first">⏮</button>
+      <button onclick="stepBack()" id="fc-back">◀</button>
+      <button onclick="togglePlay()" id="fc-play">▶ 再生</button>
+      <button onclick="stepFwd()" id="fc-fwd">▶</button>
+      <button onclick="stepTo(steps.length-1)" id="fc-last">⏭</button>
+      <span class="fc-desc" id="fc-desc"></span>
+      <span class="fc-lbl" id="fc-pos"></span>
+    </div>
+    <div class="fc-row2">
+      <span class="fc-lbl">速度</span>
+      <input type="range" min="1" max="5" value="3" step="1" id="fc-speed">
+      <span class="fc-lbl" id="fc-speed-lbl">普通</span>
+      <input type="range" min="0" max="100" value="0" step="1" id="fc-slider" style="flex:2;" oninput="onSlider(this.value)">
+    </div>
+  </div>
   <div class="card">
     <div id="game-title" style="font-size:16px;font-weight:500;margin-bottom:10px;display:none;"></div>
     <div class="mgrid" id="mgrid"></div>
@@ -307,6 +364,10 @@ select:focus{box-shadow:0 0 0 2px var(--b)}
     <div class="slabel">対局結果</div>
     <div id="result-content"></div>
   </div>
+  <div class="card" id="yama-card" style="display:none;">
+    <div class="slabel">山残り牌</div>
+    <div id="yama-content"></div>
+  </div>
   <div style="text-align:center;margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
     <button onclick="generateReport()" style="background:var(--r-bg);border-color:var(--r);color:var(--r);">📄 レポートを生成</button>
     <button onclick="saveToLocalStorage()" style="background:var(--g-bg);border-color:var(--g);color:var(--g);">💾 この結果を保存</button>
@@ -317,7 +378,11 @@ select:focus{box-shadow:0 0 0 2px var(--b)}
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
         <div class="slabel" style="margin:0;">📄 レポートプレビュー</div>
-        <button id="btn-dl-pdf" onclick="downloadReport()" style="background:var(--b);border-color:var(--b);color:#e6f1fb;font-size:13px;padding:7px 16px;">⬇ レポートをダウンロード</button>
+        <button id="btn-dl-pdf" onclick="downloadReport()" style="background:var(--b);border-color:var(--b);color:#e6f1fb;font-size:13px;padding:7px 16px;">🖨 印刷 / PDFに保存</button>
+      </div>
+      <div style="margin-bottom:10px;">
+        <label style="font-size:12px;color:var(--tx3);display:block;margin-bottom:4px;">メモ（印刷に含まれます）</label>
+        <textarea id="report-memo" rows="3" placeholder="コメント・役・反省点など自由に入力" oninput="generateReport()" style="font-size:13px;"></textarea>
       </div>
       <div id="report-preview"></div>
     </div>
@@ -325,8 +390,6 @@ select:focus{box-shadow:0 0 0 2px var(--b)}
 </div>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 const TE={
   "東":"🀀","南":"🀁","西":"🀂","北":"🀃","中":"🀄\uFE0E","発":"🀅","白":"🀆",
@@ -357,17 +420,25 @@ function th(arr,hlIdx,hlC){
     return i===hlIdx?'<span class="hl-'+hlC+'">'+e+'</span>':e;
   }).join("");
 }
-function discHTML(disc,hlLast){
+function discHTML(disc,hlLast,nakiSet,riichiIdx){
   if(!disc||!disc.length)return '<span class="tunk" style="font-size:12px;display:block;min-height:22px;">-</span>';
+  nakiSet=nakiSet||new Set();
+  riichiIdx=riichiIdx??-1;
   let html='<div class="disc-block">';
   for(let r=0;r<3;r++){
     const row=disc.slice(r*6,(r+1)*6);
     if(!row.length)break;
     const isLR=(r===Math.floor((disc.length-1)/6));
-    const rh=row.map((t,i)=>{
+    const rh=row.map(function(t,i){
+      const absIdx=r*6+i;
       if(!t||t==="?")return '<span class="tunk">?</span>';
       const e=te(t);
-      return(hlLast&&isLR&&i===row.length-1)?'<span class="hl-a">'+e+'</span>':e;
+      const isRiichi=(absIdx===riichiIdx);
+      const riichiMark=isRiichi?'<span style="font-size:8px;color:var(--r);vertical-align:top;line-height:1;">★</span>':'';
+      if(hlLast&&isLR&&i===row.length-1)return '<span class="hl-a">'+e+'</span>'+riichiMark;
+      if(nakiSet.has(absIdx))return '<span style="background:var(--r-bg);border-radius:3px;color:var(--r);">'+e+'</span>'+riichiMark;
+      if(isRiichi)return '<span style="position:relative;display:inline-block;">'+e+riichiMark+'</span>';
+      return e;
     }).join("");
     html+='<div class="disc-row">'+rh+'</div>';
   }
@@ -433,31 +504,39 @@ function parseMelds(s){
   if(!s)return[];
   const result=[];
   s.replace(/[　,、，]+/g," ").trim().split(/\s+/).filter(Boolean).forEach(function(tok){
-    // トークン形式: type:tiles[@nakiIdx][>discardTile]
-    // 例: pon:発@1>3p  chi:3m4m5m>6p  kan:中@0
-    const discM=tok.match(/^(.+?)>(.+)$/);
-    const discTile=discM?discM[2]:null;
-    const base=discM?discM[1]:tok;
+    // トークン形式: type:tiles[@nakiIdx|@ankan][>rinshan][>discard]
+    // 例: pon:発@1>3p  chi:5p6p7p@0>8p  kan:中@0>4s>7m  kan:北@ankan>2p>5s
+    const parts=tok.split(">");
+    const base=parts[0];
+    const rinshanTile=(parts.length>=2&&(base.includes("kan")))?parts[1]:null;
+    const discTile=parts.length>=3?parts[2]:(parts.length===2&&!base.includes("kan")?parts[1]:null);
 
-    const atM=base.match(/^(.+?)@(\d)$/);
+    const atM=base.match(/^(.+?)@(\w+)$/);
     const rawForParse=atM?atM[1]:base;
-    const nakiIdxFixed=atM?parseInt(atM[2]):null;
+    const nakiAttr=atM?atM[2]:null; // "0","1","2" or "ankan"
+    const isAnkan=nakiAttr==="ankan";
+    const nakiIdxFixed=(nakiAttr&&!isAnkan)?parseInt(nakiAttr):null;
 
     const m=rawForParse.match(/^(pon|chi|kan|ankan):(.+)$/i);
     if(!m)return;
     const type=m[1].toLowerCase();
     let tiles=parseTiles(m[2]);
-    // ankan は自動展開、鳴き元なし
-    if(type==="ankan"&&tiles.length===1){tiles=[tiles[0],tiles[0],tiles[0],tiles[0]];}
-    // 1枚入力でnakiIdx未確定 → 形/鳴き元選択が必要
-    const needPickShape=(tiles.length===1&&type!=="ankan"&&nakiIdxFixed===null);
-    // pon/kanフル枚数でもnakiIdx未確定 → 鳴き元選択が必要
-    const needPickFrom=!needPickShape&&nakiIdxFixed===null&&(type==="pon"||type==="kan");
-    // 形・鳴き元が確定しているがdiscTileがない → 出し牌選択が必要（kanは不要）
-    const needPickDisc=!needPickShape&&!needPickFrom&&discTile===null&&(type==="pon"||type==="chi");
-    result.push({type,tiles,
-      needPickShape,needPickFrom,needPickDisc,
-      nakiIdxFixed,discTile,rawToken:tok});
+    // 自動展開
+    if((type==="ankan"||isAnkan)&&tiles.length===1){tiles=[tiles[0],tiles[0],tiles[0],tiles[0]];}
+    else if(type==="pon"&&tiles.length===1&&nakiAttr){tiles=[tiles[0],tiles[0],tiles[0]];}
+    else if(type==="kan"&&tiles.length===1&&nakiAttr){tiles=[tiles[0],tiles[0],tiles[0],tiles[0]];}
+
+    // STEP判定
+    const needPickShape=(tiles.length===1&&!isAnkan&&nakiAttr===null);
+    const needPickFrom=!needPickShape&&nakiAttr===null&&(type==="pon"||type==="kan");
+    // kan/ankan: 嶺上牌が未入力
+    const needPickRinshan=!needPickShape&&!needPickFrom&&(type==="kan"||isAnkan)&&rinshanTile===null;
+    // pon/chi/kan(嶺上確定後): 捨て牌が未入力
+    const needPickDisc=!needPickShape&&!needPickFrom&&!needPickRinshan&&discTile===null&&(type==="pon"||type==="chi"||type==="kan"||isAnkan);
+
+    result.push({type:isAnkan?"ankan":type,tiles,
+      needPickShape,needPickFrom,needPickRinshan,needPickDisc,
+      nakiIdxFixed,isAnkan,rinshanTile,discTile,rawToken:tok});
   });
   return result;
 }
@@ -473,13 +552,14 @@ function ponOptions(tile){
   ];
 }
 
-// カンのあり得る3パターン（鳴いた牌の位置）
+// カンの選択肢（大明槓3パターン＋暗カン）
 function kanOptions(tile){
   const t=tile;
   return [
-    {tiles:[t,t,t,t],nakiIdx:0,from:"上家から"},
-    {tiles:[t,t,t,t],nakiIdx:1,from:"対面から"},
-    {tiles:[t,t,t,t],nakiIdx:2,from:"下家から"},
+    {tiles:[t,t,t,t],nakiIdx:0,from:"上家から（大明槓）",attr:"0"},
+    {tiles:[t,t,t,t],nakiIdx:1,from:"対面から（大明槓）",attr:"1"},
+    {tiles:[t,t,t,t],nakiIdx:2,from:"下家から（大明槓）",attr:"2"},
+    {tiles:[t,t,t,t],nakiIdx:-1,from:"暗カン（自分のツモ）",attr:"ankan"},
   ];
 }
 
@@ -524,12 +604,20 @@ let curInputWind="east";
 let kbdTarget=null;
 let kbdTab="man";
 let gameData=null,steps=[],cur=0,timer=null;
+let tsumoVisible={east:false,south:false,west:false,north:false};
+
+function toggleTsumo(wind){
+  tsumoVisible[wind]=!tsumoVisible[wind];
+  renderStep(cur);
+}
 
 // ─── フェーズ管理 ───
 function showPhase(id){
   ["ph-input","ph-final","ph-player"].forEach(function(p){
     document.getElementById(p).style.display=p===id?"block":"none";
   });
+  // フローティングコントロールは再生フェーズのみ表示
+  document.getElementById("float-ctrl").style.display=id==="ph-player"?"block":"none";
 }
 function backToInput(){showPhase("ph-input");window.scrollTo({top:0,behavior:"smooth"});}
 function backToFinal(){
@@ -764,14 +852,22 @@ function buildFinalInputs(){
       +'<h3><span style="font-size:20px;">'+te(WJ[w])+'</span>'+WJ[w]+'家</h3>'
       +'<span class="flabel">捨て牌（順番通り）</span>'
       +'<textarea id="fd-disc-'+w+'" class="ta-sm" placeholder="例: N 1m 8m 6m 9p..."'
-      +' oninput="updFP(\'disc\',\''+w+'\')"'
+      +' oninput="updFP(\'disc\',\''+w+'\');updRiichiPicker(\''+w+'\')"'
       +' onfocus="openFinalKbd(\'fd-disc-'+w+'\',\'disc\',\''+w+'\')"></textarea>'
       +'<div class="hprev" id="fp-disc-'+w+'" style="font-size:17px;margin-top:4px;"></div>'
+      +'<input type="hidden" id="fd-riichi-'+w+'" value="-1">'
+      +'<div id="riichi-picker-'+w+'" style="margin-top:4px;"></div>'
       +'<span class="flabel">最終手牌</span>'
       +'<textarea id="fd-hand-'+w+'" class="ta-sm" placeholder="例: E E H H 2s 4s..."'
-      +' oninput="updFP(\'hand\',\''+w+'\')"'
+      +' oninput="updFP(\'hand\',\''+w+'\');autoFillTsumo(\''+w+'\')"'
       +' onfocus="openFinalKbd(\'fd-hand-'+w+'\',\'hand\',\''+w+'\')"></textarea>'
       +'<div class="hprev" id="fp-hand-'+w+'" style="font-size:17px;margin-top:4px;"></div>'
+      +'<span class="flabel">ツモ牌（順番通り）</span>'
+      +'<div style="font-size:11px;color:var(--tx3);margin-bottom:4px;">初期手牌・最終手牌・捨て牌・副露から自動推測。<span style="color:var(--a-t);">?</span> は不明牌（タップして修正可）</div>'
+      +'<textarea id="fd-tsumo-'+w+'" class="ta-sm" placeholder="例: 3m 5p 北..."'
+      +' oninput="updFP(\'tsumo\',\''+w+'\')"'
+      +' onfocus="openFinalKbd(\'fd-tsumo-'+w+'\',\'tsumo\',\''+w+'\')"></textarea>'
+      +'<div class="hprev" id="fp-tsumo-'+w+'" style="font-size:17px;margin-top:4px;"></div>'
       +'<span class="flabel">副露（なければ空欄）</span>'
       +'<div style="font-size:11px;color:var(--tx3);margin-bottom:4px;line-height:1.7;">'
       +'すべて <b>1枚入力でOK</b> → タップで形・鳴き元を選択できます<br>'
@@ -779,7 +875,7 @@ function buildFinalInputs(){
       +'</div>'
       +'<textarea id="fd-meld-'+w+'" class="ta-sm" placeholder="例: pon:発 chi:3m4m5m kan:中"'
       +' style="height:38px;font-size:13px;"'
-      +' oninput="updMeldPrev(\''+w+'\')"'
+      +' oninput="updMeldPrev(\''+w+'\');autoFillTsumo(\''+w+'\')"'
       +' onfocus="openFinalKbd(\'fd-meld-'+w+'\',\'meld\',\''+w+'\')"></textarea>'
       +'<div id="fp-meld-'+w+'" style="margin-top:6px;min-height:20px;font-size:17px;line-height:1.5;"></div>'
       +'<div id="kbd-slot-'+w+'" style="margin-top:4px;"></div>'
@@ -790,10 +886,127 @@ function buildFinalInputs(){
 function updFP(type,w){
   const val=document.getElementById("fd-"+type+"-"+w)?.value||"";
   const tiles=parseTiles(val);
-  // 捨て牌は打牌順を保持、手牌はソート
-  const display=(type==="disc")?tiles:sortTiles(tiles);
+  const display=(type==="disc"||type==="tsumo")?tiles:sortTiles(tiles);
   const el=document.getElementById("fp-"+type+"-"+w);
   if(el)el.innerHTML=th(display);
+}
+
+function updRiichiPicker(w){
+  const slot=document.getElementById("riichi-picker-"+w);
+  if(!slot)return;
+  const disc=parseTiles(document.getElementById("fd-disc-"+w)?.value||"");
+  const curIdx=parseInt(document.getElementById("fd-riichi-"+w)?.value??"-1");
+  if(!disc.length){slot.innerHTML="";return;}
+  // ボタン1個: 未選択ならリーチ宣言牌選択を促す、選択済みなら解除ボタン付き
+  let html='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:2px;">';
+  if(curIdx>=0&&curIdx<disc.length){
+    html+='<span style="font-size:11px;color:var(--r);">★リーチ宣言: '+te(disc[curIdx])+'（'+( curIdx+1)+'枚目）</span>';
+    html+='<button onclick="selectRiichi(\''+w+'\',-1)" style="font-size:11px;padding:2px 8px;color:var(--tx3);">解除</button>';
+  } else {
+    html+='<button onclick="openRiichiSelect(\''+w+'\')" style="font-size:11px;padding:3px 10px;color:var(--r);border-color:var(--r);">★ リーチ宣言牌を選ぶ</button>';
+  }
+  html+='</div>';
+  // 選択モード
+  const pickerId="riichi-select-"+w;
+  if(document.getElementById(pickerId)){
+    html+='<div id="'+pickerId+'" style="display:flex;gap:3px;flex-wrap:wrap;margin-top:4px;">';
+    disc.forEach(function(t,i){
+      const isSelected=(i===curIdx);
+      html+='<button onclick="selectRiichi(\''+w+'\','+i+')" '
+        +'style="font-size:20px;padding:2px 4px;border-radius:5px;border:1px solid '+(isSelected?"var(--r)":"var(--bd2)")+';background:'+(isSelected?"var(--r-bg)":"var(--sf)")+';cursor:pointer;position:relative;">'
+        +te(t)
+        +(isSelected?'<span style="position:absolute;top:0;right:1px;font-size:8px;color:var(--r);">★</span>':'')
+        +'</button>';
+    });
+    html+='</div>';
+  }
+  slot.innerHTML=html;
+}
+
+function openRiichiSelect(w){
+  const slot=document.getElementById("riichi-picker-"+w);
+  if(!slot)return;
+  // selectモード用のdivを一時追加してから再描画
+  const existing=document.getElementById("riichi-select-"+w);
+  if(!existing){
+    const tmp=document.createElement("div");
+    tmp.id="riichi-select-"+w;
+    slot.appendChild(tmp);
+  }
+  updRiichiPicker(w);
+}
+
+function selectRiichi(w,idx){
+  const input=document.getElementById("fd-riichi-"+w);
+  if(input)input.value=idx;
+  // selectモードを閉じる
+  const sel=document.getElementById("riichi-select-"+w);
+  if(sel)sel.remove();
+  updRiichiPicker(w);
+}
+
+// ツモ牌を自動推測して入力欄に反映
+function autoFillTsumo(w){
+  const ta=document.getElementById("fd-tsumo-"+w);
+  if(!ta)return;
+  // すでにユーザーが手動で何か書いていたら上書きしない（空か?のみなら上書きOK）
+  const existing=ta.value.trim();
+  const result=estimateTsumo(w);
+  if(!result)return;
+  const newVal=result.join(" ");
+  // 既存が空、または全て?ならば自動入力
+  if(!existing||existing.replace(/\?/g,"").trim()===""){
+    ta.value=newVal;
+    updFP("tsumo",w);
+  }
+}
+
+// ツモ牌推測: 初期手牌+ツモ牌 = 最終手牌+捨て牌+副露に消えた牌(鳴いた他家牌を除く)
+function estimateTsumo(w){
+  const init=initHands[w]||[];
+  const finalH=sortTiles(parseTiles(document.getElementById("fd-hand-"+w)?.value||""));
+  const disc=parseTiles(document.getElementById("fd-disc-"+w)?.value||"");
+  const melds=parseMelds(document.getElementById("fd-meld-"+w)?.value||"");
+  if(!init.length&&!finalH.length)return null;
+
+  // 副露の牌のうち「自分でツモった牌」= ankan全部 + pon/chi/kanのnakiIdx以外
+  // 「他家からもらった牌」= pon/chi/kanのnakiIdx位置の牌1枚
+  // ツモ計算では他家からもらった牌は除外する
+  const meldOwnTiles=[];// 自分の手牌から出た牌
+  melds.forEach(function(m){
+    if(m.type==="ankan"||m.isAnkan){
+      // 暗カン: 4枚とも自分のツモ
+      (m.tiles||[]).forEach(function(t){meldOwnTiles.push(t);});
+    } else {
+      // pon/chi/kan: 鳴いた1枚(nakiIdx)は他家から、残りは自分の手から
+      const nakiIdx=m.nakiIdxFixed!==null?m.nakiIdxFixed:0;
+      (m.tiles||[]).forEach(function(t,ti){
+        if(ti!==nakiIdx)meldOwnTiles.push(t);
+      });
+    }
+  });
+
+  // 手元にあった牌の総数 = 最終手牌 + 捨て牌 + 副露自己牌
+  const used=finalH.concat(disc).concat(meldOwnTiles);
+
+  // used - init = ツモ牌（multiset差分）
+  const initCount={};
+  init.forEach(function(t){initCount[normalTile(t)]=(initCount[normalTile(t)]||0)+1;});
+  const remain=[];
+  used.forEach(function(t){
+    const n=normalTile(t);
+    if(initCount[n]>0){initCount[n]--;} else {remain.push(t);}
+  });
+
+  // ツモ牌の枚数は捨て牌枚数 + カン回数（嶺上ツモ分）とほぼ一致するはず
+  // 正確な順番は不明なので remain をソートして返す（不明な分は?で補う）
+  const kanCount=melds.filter(function(m){return m.type==="kan"||m.type==="ankan"||m.isAnkan;}).length;
+  const expectedCount=disc.length+kanCount;
+  const tsumo=sortTiles(remain);
+
+  // 枚数が合わない分は?で補う
+  while(tsumo.length<expectedCount)tsumo.push("?");
+  return tsumo.slice(0,Math.max(tsumo.length,expectedCount));
 }
 
 // 牌列のHTML生成（nakiIdxの牌を強調）
@@ -839,45 +1052,77 @@ function updMeldPrev(w){
           return;
         }
       } else if(m.type==="pon"){
-        opts=m.needPickShape?ponOptions(m.tiles[0]):ponOptions(m.tiles[0]);
+        opts=ponOptions(m.tiles[0]);
         hint="どこから鳴きましたか？";
       } else if(m.type==="kan"){
         opts=kanOptions(m.tiles[0]);
-        hint="どこから鳴きましたか？";
+        hint="カンの種類を選んでください";
       }
+      const showNakiHint=(m.type!=="kan");
       html+='<div style="margin-bottom:10px;">'
         +'<div style="font-size:11px;color:var(--tx3);margin-bottom:5px;">'
         +'<span style="font-size:11px;padding:2px 7px;border-radius:20px;margin-right:5px;'+lc+'">'+lbl+'</span>'
-        +hint+' <span style="opacity:.7;">（鳴いた牌 = <span style="background:var(--a-bg);border:1px solid var(--a);border-radius:3px;padding:0 3px;color:var(--a-t);">強調</span>）</span>'
+        +hint
+        +(showNakiHint?' <span style="opacity:.7;">（鳴いた牌 = <span style="background:var(--a-bg);border:1px solid var(--a);border-radius:3px;padding:0 3px;color:var(--a-t);">強調</span>）</span>':'')
         +'</div><div style="display:flex;flex-direction:column;gap:5px;">';
       opts.forEach(function(opt){
         const tilesHtml=tilesWithNakiHTML(opt.tiles,opt.nakiIdx);
-        const sep=(m.type==="chi")?"":"@"+opt.nakiIdx;
-        const tokStr=m.type+":"+opt.tiles.join("")+sep;
-        const fromLabel=opt.from?'<span style="font-size:11px;color:var(--tx2);min-width:4.5em;flex-shrink:0;">'+opt.from+'</span>':'';
+        const attr=opt.attr||(""+opt.nakiIdx);
+        const tokStr=m.type+":"+opt.tiles.join("")+"@"+attr;
+        const isAnkanOpt=(attr==="ankan");
+        const fromLabel=opt.from
+          ?'<span style="font-size:11px;color:var(--tx2);min-width:'+(isAnkanOpt?"9":"5")+'em;flex-shrink:0;">'+opt.from+'</span>':'';
         html+='<button onclick="selectMeld(\''+w+'\',\''+m.rawToken+'\',\''+tokStr+'\')" '
-          +'style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:8px;border:1px solid var(--bd2);background:var(--sf);cursor:pointer;text-align:left;-webkit-tap-highlight-color:transparent;width:100%;">'
+          +'style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:8px;border:1px solid var(--bd2);background:'+(isAnkanOpt?"var(--sf2)":"var(--sf)")
+          +';cursor:pointer;text-align:left;-webkit-tap-highlight-color:transparent;width:100%;">'
           +fromLabel+'<span style="display:flex;align-items:center;gap:2px;flex-wrap:nowrap;">'+tilesHtml+'</span>'
           +'</button>';
       });
       html+='</div></div>';
 
-    // ── STEP2: 出し牌選択（pon/chiのみ） ──
+    // ── STEP2: 嶺上牌選択（kan/ankan） ──
+    } else if(m.needPickRinshan){
+      const nakiIdx=m.nakiIdxFixed!==null?m.nakiIdxFixed:-1;
+      const tilesHtml=tilesWithNakiHTML(m.tiles,nakiIdx);
+      const kanLbl=m.isAnkan?"暗カン":"カン";
+      const handTiles=parseTiles(document.getElementById("fd-hand-"+w)?.value||"");
+      html+='<div style="margin-bottom:10px;">'
+        +'<div style="display:flex;align-items:center;gap:5px;margin-bottom:7px;flex-wrap:wrap;">'
+        +'<span style="font-size:11px;padding:2px 7px;border-radius:20px;'+lc+'">'+kanLbl+'</span>'
+        +'<span style="display:flex;align-items:center;gap:2px;">'+tilesHtml+'</span>'
+        +'<span style="font-size:13px;color:var(--tx3);margin-left:4px;">嶺上→ ?</span>'
+        +'</div>'
+        +'<div style="font-size:11px;color:var(--tx3);margin-bottom:5px;">嶺上牌を選んでください（最終手牌から、または直接入力）</div>';
+      if(handTiles.length){
+        html+='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;">';
+        handTiles.forEach(function(ht){
+          html+='<button onclick="selectRinshan(\''+w+'\',\''+m.rawToken+'\',\''+ht+'\')" '
+            +'style="font-size:22px;padding:3px 6px;border-radius:6px;border:1px solid var(--bd2);background:var(--sf);cursor:pointer;-webkit-tap-highlight-color:transparent;line-height:1.3;">'
+            +te(ht)+'</button>';
+        });
+        html+='</div>';
+      }
+      html+='<div style="display:flex;gap:6px;align-items:center;">'
+        +'<input type="text" id="rinshan-input-'+w+'" placeholder="例: 3p" style="width:80px;font-size:13px;">'
+        +'<button onclick="selectRinshanManual(\''+w+'\',\''+m.rawToken+'\')" style="font-size:13px;padding:6px 12px;">決定</button>'
+        +'</div></div>';
+
+    // ── STEP3: 捨て牌選択 ──
     } else if(m.needPickDisc){
-      const nakiIdx=m.nakiIdxFixed!==null?m.nakiIdxFixed:0;
+      const nakiIdx=m.nakiIdxFixed!==null?m.nakiIdxFixed:(m.type==="chi"?-1:0);
       const tilesHtml=tilesWithNakiHTML(m.tiles,nakiIdx);
       const discTiles=parseTiles(document.getElementById("fd-disc-"+w)?.value||"");
+      const rinshanHtml=m.rinshanTile
+        ?'<span style="font-size:13px;color:var(--tx3);">嶺上</span><span style="font-size:20px;">'+te(m.rinshanTile)+'</span>'
+        :'';
       html+='<div style="margin-bottom:10px;">'
-        // 確定した副露表示
-        +'<div style="display:flex;align-items:center;gap:5px;margin-bottom:7px;">'
+        +'<div style="display:flex;align-items:center;gap:5px;margin-bottom:7px;flex-wrap:wrap;">'
         +'<span style="font-size:11px;padding:2px 7px;border-radius:20px;'+lc+'">'+lbl+'</span>'
         +'<span style="display:flex;align-items:center;gap:2px;">'+tilesHtml+'</span>'
-        +'<span style="font-size:13px;color:var(--tx3);margin-left:4px;">→ ?</span>'
+        +rinshanHtml
+        +'<span style="font-size:13px;color:var(--tx3);margin-left:4px;">捨て→ ?</span>'
         +'</div>'
-        // 出し牌選択
-        +'<div style="font-size:11px;color:var(--tx3);margin-bottom:5px;">'
-        +lbl+'出しの牌を選んでください（捨て牌から）'
-        +'</div>';
+        +'<div style="font-size:11px;color:var(--tx3);margin-bottom:5px;">'+lbl+'後の捨て牌を選んでください（捨て牌欄から）</div>';
       if(!discTiles.length){
         html+='<div style="font-size:12px;color:var(--tx3);">← 先に捨て牌を入力してください</div>';
       } else {
@@ -893,15 +1138,18 @@ function updMeldPrev(w){
 
     // ── 確定済みプレビュー ──
     } else {
-      const nakiIdx=m.nakiIdxFixed!==null?m.nakiIdxFixed:0;
+      const nakiIdx=m.nakiIdxFixed!==null?m.nakiIdxFixed:(m.type==="chi"?-1:0);
       const tilesHtml=tilesWithNakiHTML(m.tiles,nakiIdx);
+      const rinshanHtml=m.rinshanTile
+        ?'<span style="font-size:13px;color:var(--tx3);">嶺上</span><span style="font-size:20px;line-height:1.3;">'+te(m.rinshanTile)+'</span>'
+        :'';
       const discHtml=m.discTile
         ?'<span style="font-size:13px;color:var(--tx3);">→</span><span style="font-size:20px;line-height:1.3;">'+te(m.discTile)+'</span>'
         :'';
       html+='<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px;margin-bottom:4px;">'
         +'<span style="font-size:11px;padding:2px 7px;border-radius:20px;'+lc+'">'+lbl+'</span>'
         +'<span style="display:flex;align-items:center;gap:2px;">'+tilesHtml+'</span>'
-        +discHtml
+        +rinshanHtml+discHtml
         +'</span>';
     }
   });
@@ -916,7 +1164,24 @@ function selectMeld(w,oldTok,newTok){
   ta.dispatchEvent(new Event("input"));
 }
 
-// 出し牌の選択確定
+// 嶺上牌の選択確定（手牌ボタンから）
+function selectRinshan(w,oldTok,rinshanTile){
+  const ta=document.getElementById("fd-meld-"+w);
+  if(!ta)return;
+  ta.value=ta.value.replace(oldTok,oldTok+">"+rinshanTile);
+  ta.dispatchEvent(new Event("input"));
+}
+
+// 嶺上牌の選択確定（直接入力から）
+function selectRinshanManual(w,oldTok){
+  const input=document.getElementById("rinshan-input-"+w);
+  if(!input)return;
+  const tiles=parseTiles(input.value.trim());
+  if(!tiles.length)return;
+  selectRinshan(w,oldTok,tiles[0]);
+}
+
+// 捨て牌の選択確定
 function selectDiscard(w,oldTok,discTile){
   const ta=document.getElementById("fd-meld-"+w);
   if(!ta)return;
@@ -990,13 +1255,17 @@ function buildFromText(){
     dora:document.getElementById("m-dora").value.trim()
   };
 
-  const discards={},finalHands={},melds={};
+  const discards={},finalHands={},melds={},tsumos={},riichiIdxMap={};
   WE.forEach(function(w){
     discards[w]=parseTiles(document.getElementById("fd-disc-"+w)?.value||"");
     finalHands[w]=sortTiles(parseTiles(document.getElementById("fd-hand-"+w)?.value||""));
     melds[w]=parseMelds(document.getElementById("fd-meld-"+w)?.value||"");
+    tsumos[w]=parseTiles(document.getElementById("fd-tsumo-"+w)?.value||"");
+    // ツモ牌が空なら自動推測
+    if(!tsumos[w].length){const est=estimateTsumo(w);if(est)tsumos[w]=est;}
+    var _rv=document.getElementById('fd-riichi-'+w);riichiIdxMap[w]=_rv?parseInt(_rv.value||'-1'):-1;
+    var _rv=document.getElementById('fd-riichi-'+w);riichiIdxMap[w]=_rv?parseInt(_rv.value||-1):-1;
   });
-
   if(WE.every(function(w){return !discards[w].length&&!finalHands[w].length;})){
     setSt("少なくとも1プレイヤーのデータを入力してください","err","st-text");return;
   }
@@ -1017,11 +1286,12 @@ function buildFromText(){
     players:{},discards,initHands
   };
   WE.forEach(function(w){
-    gameData.players[w]={hand:finalHands[w],melds:melds[w]};
+    gameData.players[w]={hand:finalHands[w],melds:melds[w],tsumo:tsumos[w],riichiIdx:riichiIdxMap[w]};
   });
 
   steps=buildSteps(gameData);
   document.getElementById("step-slider").max=steps.length-1;
+  tsumoVisible={east:false,south:false,west:false,north:false};
   showPhase("ph-player");
   renderPlayer();
   window.scrollTo({top:0,behavior:"smooth"});
@@ -1031,41 +1301,133 @@ function buildFromText(){
 function buildSteps(gd){
   const result=[];
   const allDisc=gd.discards||{};
+  const allMelds=gd.players||{};
+
+  // 副露ごとに「どの捨て牌が鳴かれたか」を特定する
+  // nakiInfo[wind] = [ {discWind, discIdx, meldIdx}, ... ] 鳴かれた捨て牌の情報
+  // 推定ロジック: pon/chiのdiscTileが他家の捨て牌に含まれる最後のインデックスを使う
+  // 捨て牌の消費ペースを考慮して「自分より前のターン」の捨て牌から探す
+
+  // まず全副露を捨て牌との対応付けに整理
+  // meldEvents[i] = { wind, meld, discWind, discIdx, stepAfter }
+  // stepAfterは「この副露が現れる最初のステップインデックス（これより後に表示）」
+  const meldEvents=[];
+
+  WE.forEach(function(nakiWind){
+    const melds=allMelds[nakiWind]?.melds||[];
+    melds.forEach(function(meld,mi){
+      if(meld.type==="ankan"||meld.isAnkan){
+        // 暗カン: 捨て牌との対応なし。表示タイミングは最後
+        meldEvents.push({nakiWind,meld,discWind:null,discIdx:-1,meldRank:1000+mi});
+        return;
+      }
+      if(!meld.discTile){
+        // discTile未設定: 最後に表示
+        meldEvents.push({nakiWind,meld,discWind:null,discIdx:-1,meldRank:2000+mi});
+        return;
+      }
+      // pon/chi/kan: discTileを他家の捨て牌から探す
+      let bestWind=null,bestIdx=-1,bestRank=Infinity;
+      WE.forEach(function(dw){
+        if(dw===nakiWind)return;
+        const dl=allDisc[dw]||[];
+        // 後ろから探して最後に出てきたものを採用
+        for(let i=dl.length-1;i>=0;i--){
+          if(dl[i]===meld.discTile&&i<bestRank){
+            bestWind=dw;bestIdx=i;bestRank=i;break;
+          }
+        }
+      });
+      meldEvents.push({nakiWind,meld,discWind:bestWind,discIdx:bestIdx,meldRank:bestIdx>=0?bestIdx:5000+mi});
+    });
+  });
+
+  // meldEventsを鳴きのタイミング順にソート
+  meldEvents.sort(function(a,b){return a.meldRank-b.meldRank;});
+
+  // 捨て牌ごとに「鳴かれたインデックスのSet」を作る: nakiSets[wind] = Set<discIdx>
+  const nakiSets={};
+  WE.forEach(function(w){nakiSets[w]=new Set();});
+  meldEvents.forEach(function(ev){
+    if(ev.discWind&&ev.discIdx>=0)nakiSets[ev.discWind].add(ev.discIdx);
+  });
+
+  // 各ステップで表示すべき副露を段階的に積み上げる
+  // 捨て牌のステップ数カウント: 各windの捨て牌がdiscIdx枚まで出た時点でその副露を表示
   const empty={east:[],south:[],west:[],north:[]};
   result.push({type:"init",desc:gd.meta.bakaze+"風"+gd.meta.kyoku+"局 配牌",
-    discards:dc(empty),active:null,hlWind:null,hlTile:null});
+    discards:dc(empty),active:null,hlWind:null,hlTile:null,
+    visibleMelds:{east:[],south:[],west:[],north:[]},nakiSets:nakiSets});
+
   const maxD=Math.max(0,...WE.map(function(w){return(allDisc[w]||[]).length;}));
   const ds={east:[],south:[],west:[],north:[]};
+  // 表示済み副露を追跡
+  const shownMeldFlags=meldEvents.map(function(){return false;});
+
   for(let i=0;i<maxD;i++){
     for(const wind of WE){
       const dl=allDisc[wind]||[];
       if(i>=dl.length)continue;
       const d=dl[i];
       ds[wind]=[...ds[wind],d];
+
+      // このステップでdiscWind===wind && discIdx===iとなる副露を出現させる
+      shownMeldFlags.forEach(function(_,ei){
+        const ev=meldEvents[ei];
+        if(!shownMeldFlags[ei]&&ev.discWind===wind&&ev.discIdx===i){
+          shownMeldFlags[ei]=true;
+        }
+      });
+
+      // 表示すべきvisibleMeldsを構築
+      const vm={east:[],south:[],west:[],north:[]};
+      shownMeldFlags.forEach(function(shown,ei){
+        if(shown)vm[meldEvents[ei].nakiWind].push(meldEvents[ei].meld);
+      });
+
       result.push({type:"dahai",desc:WJ[wind]+"家 "+te(d)+" を打牌",
-        discards:dc(ds),active:wind,hlWind:wind,hlTile:d});
+        discards:dc(ds),active:wind,hlWind:wind,hlTile:d,
+        visibleMelds:vm,nakiSets:nakiSets});
     }
   }
+
+  // 最終ステップは全副露を表示
+  const vmAll={east:[],south:[],west:[],north:[]};
+  meldEvents.forEach(function(ev){vmAll[ev.nakiWind].push(ev.meld);});
+
   const rt=gd.meta?.result_type;
   if(rt==="ryukyoku"||!rt){
-    result.push({type:"ryukyoku",desc:"流局",discards:dc(ds),active:null,hlWind:null,hlTile:null});
+    result.push({type:"ryukyoku",desc:"流局",discards:dc(ds),active:null,hlWind:null,hlTile:null,
+      visibleMelds:vmAll,nakiSets:nakiSets});
   } else {
     const w=gd.meta.winner;
     const sc=gd.players[w]?.score||gd.meta.score||"";
     const loser=gd.meta.loser;
     result.push({type:"agari",
       desc:WJ[w]+"家 "+(rt==="tsumo"?"ツモ":"ロン（"+WJ[loser]+"家から）")+"和了"+(sc?" "+sc+"点":""),
-      discards:dc(ds),active:w,winner:w,loser:loser,hlWind:null,hlTile:null});
+      discards:dc(ds),active:w,winner:w,loser:loser,hlWind:null,hlTile:null,
+      visibleMelds:vmAll,nakiSets:nakiSets});
   }
   return result;
 }
 
 // ─── 再生描画 ───
 function renderPlayer(){
-  renderMeta();renderLog();renderResult();stepTo(0);
+  renderMeta();renderLog();renderResult();renderYamaCard();stepTo(0);
+  // メインの速度スライダー
   document.getElementById("speed-sl").oninput=function(e){
     document.getElementById("speed-lbl").textContent=SPDL[+e.target.value-1];
+    document.getElementById("fc-speed").value=e.target.value;
+    document.getElementById("fc-speed-lbl").textContent=SPDL[+e.target.value-1];
   };
+  // フローティングの速度スライダー
+  document.getElementById("fc-speed").oninput=function(e){
+    document.getElementById("speed-lbl").textContent=SPDL[+e.target.value-1];
+    document.getElementById("speed-sl").value=e.target.value;
+    document.getElementById("fc-speed-lbl").textContent=SPDL[+e.target.value-1];
+  };
+  // フローティングスライダーのmax同期
+  document.getElementById("fc-slider").max=steps.length-1;
 }
 
 function renderMeta(){
@@ -1102,37 +1464,106 @@ function renderStep(idx){
     const isLoser=isLast&&s.loser===wind;
     const initH=gameData.initHands[wind]||[];
     const finalH=gameData.players[wind]?.hand||[];
+    const tsumoH=gameData.players[wind]?.tsumo||[];
+    const riichiIdx=gameData.players[wind]?.riichiIdx??-1;
     const disc=s.discards[wind]||[];
-    const pm=gameData.players[wind]?.melds||[];
+    const pm=s.visibleMelds?s.visibleMelds[wind]:(gameData.players[wind]?.melds||[]);
     const sc=isWin?(gameData.meta.score||""):"";
-    const mHtml=meldHTML(pm);
+    const mHtml=pm.length?meldHTML(pm):"";
+    const nakiSet=s.nakiSets?s.nakiSets[wind]:new Set();
+    const hasTsumo=tsumoH.length>0;
+    const showTsumo=tsumoVisible[wind]&&hasTsumo;
+
+    // ツモ＋捨てペア列
+    function tsumoDiscHTML(){
+      let html='<div class="tsumo-row">';
+      for(let i=0;i<disc.length;i++){
+        const t=tsumoH[i]||null;
+        const d=disc[i];
+        const isLastDisc=(isAct&&s.type==="dahai"&&i===disc.length-1);
+        const isNaki=nakiSet.has(i);
+        const isTsumoCut=(t&&t!=="?"&&t===d);
+        const isRiichi=(i===riichiIdx);
+        html+='<div class="td-pair">';
+        if(t){
+          if(isTsumoCut){
+            html+='<div class="td-tsumo" style="opacity:.45;">'+te(t)+'</div>';
+            html+='<div class="td-arrow">↓</div>';
+          } else {
+            html+='<div class="td-tsumo">'+te(t)+'</div>';
+            html+='<div class="td-arrow" style="opacity:0;">↓</div>';
+          }
+        } else {
+          html+='<div class="td-tsumo" style="min-height:24px;"></div>'
+               +'<div class="td-arrow" style="opacity:0;">↓</div>';
+        }
+        let discClass="td-disc";
+        if(isNaki)discClass+=" naki";
+        else if(isLastDisc)discClass+=" last-act";
+        else if(isTsumoCut)discClass+=" tsumo-cut";
+        const rMark=isRiichi?'<span style="font-size:8px;color:var(--r);vertical-align:top;line-height:1;">★</span>':'';
+        html+='<div class="'+discClass+'" style="position:relative;">'+te(d)+rMark+'</div>';
+        html+='</div>';
+      }
+      html+='</div>';
+      return html;
+    }
+
+    // 通常の捨て牌のみ表示
+    const discCol='<div><div class="section-title">捨て牌（'+disc.length+'枚）</div>'
+      +(showTsumo
+        ?'<div class="section-title" style="margin-bottom:3px;opacity:.7;">ツモ / 捨て</div>'+tsumoDiscHTML()
+        :discHTML(disc,s.type==="dahai"&&isAct,nakiSet,riichiIdx)
+      )
+      +(isLoser?'<div style="margin-top:6px;padding:4px 10px;background:var(--r-bg);border-radius:var(--ra);font-size:13px;color:var(--r);font-weight:500;display:inline-block;">⚡ ロン（放銃）</div>':"")
+      +'</div>';
+
+    // ツモ牌トグルボタン
+    const tsumoBtn=hasTsumo
+      ?'<button onclick="toggleTsumo(\''+wind+'\')" style="font-size:11px;padding:3px 8px;margin-top:4px;color:var(--tx3);">'
+        +(showTsumo?"ツモ牌を隠す":"ツモ牌を表示")+'</button>'
+      :'';
 
     return '<div class="prow'+(isWin?" win":isLoser?" ron-loser":isAct?" act":"")+'"><div class="prow-hdr">'
       +'<span class="dot'+(isAct?" act":"")+'"></span>'
       +'<span>'+WJ[wind]+'家'+(isWin?" 🏆":"")+'</span>'
       +(isAct&&s.type==="dahai"?'<span class="act-label">打牌: '+te(s.hlTile)+'</span>':"")
       +(isWin&&sc?'<span style="font-size:11px;padding:2px 7px;border-radius:20px;background:var(--a-bg);color:var(--a-t);">'+sc+'点</span>':"")
-      +(pm.length?'<span class="naki-label">'+pm.map(function(m){return{pon:"ポン",chi:"チー",kan:"カン"}[m.type]||m.type;}).join(" ")+'</span>':"")
+      +(pm.length?'<span class="naki-label">'+pm.map(function(m){return{pon:"ポン",chi:"チー",kan:"カン",ankan:"暗カン"}[m.type]||m.type;}).join(" ")+'</span>':"")
       +'</div><div class="prow-body">'
-      +'<div><div class="section-title">初期配牌</div><div class="tiles-line">'+th(initH)+'</div></div>'
-      +'<div><div class="section-title">捨て牌（'+disc.length+'枚）</div>'
-      +discHTML(disc,s.type==="dahai"&&isAct)
-      +(isLoser?'<div style="margin-top:6px;padding:4px 10px;background:var(--r-bg);border-radius:var(--ra);font-size:13px;color:var(--r);font-weight:500;display:inline-block;">⚡ ロン（放銃）</div>':"")
-      +(mHtml?'<div style="margin-top:6px;"><span class="section-title">副露</span><div style="margin-top:2px;">'+mHtml+'</div></div>':"")
+      // 左列: 初期配牌 + ツモボタン
+      +'<div>'
+        +'<div class="section-title">初期配牌</div>'
+        +'<div class="tiles-line">'+th(initH)+'</div>'
+        +tsumoBtn
       +'</div>'
-      +'<div><div class="section-title">最終手牌</div><div class="tiles-line '+(isLast?"":"dim")+'">'+th(finalH)+'</div></div>'
+      // 中央列: 捨て牌（ツモ表示時はペア）
+      +discCol
+      // 右列: 最終手牌 + 副露
+      +'<div>'
+        +'<div class="section-title">最終手牌</div>'
+        +'<div class="tiles-line '+(isLast?"":"dim")+'">'+th(finalH)+'</div>'
+        +(mHtml?'<div class="section-title" style="margin-top:6px;">副露</div><div style="margin-top:2px;">'+mHtml+'</div>':"")
+      +'</div>'
       +'</div></div>';
   }).join("");
 
   document.getElementById("sinfo").textContent=(idx+1)+" / "+steps.length;
   const pct=steps.length>1?Math.round(idx/(steps.length-1)*100):0;
   document.getElementById("pfill").style.width=pct+"%";
+  // フローティングバー同期
+  document.getElementById("fc-slider").value=idx;
+  document.getElementById("fc-pos").textContent=(idx+1)+" / "+steps.length;
+  document.getElementById("fc-desc").textContent=s.desc;
+  // ボタン無効化（メイン＋フロート両方）
+  ["b-back","b-first","fc-back","fc-first"].forEach(function(id){
+    const el=document.getElementById(id);if(el)el.disabled=idx===0;});
+  ["b-fwd","b-last","fc-fwd","fc-last"].forEach(function(id){
+    const el=document.getElementById(id);if(el)el.disabled=idx===steps.length-1;});
   document.querySelectorAll(".li").forEach(function(el,i){
     el.classList.toggle("cur",i===idx);
     if(i===idx)el.scrollIntoView({block:"nearest"});
   });
-  ["b-back","b-first"].forEach(function(id){document.getElementById(id).disabled=idx===0;});
-  ["b-fwd","b-last"].forEach(function(id){document.getElementById(id).disabled=idx===steps.length-1;});
 }
 
 function renderLog(){
@@ -1157,13 +1588,93 @@ function renderResult(){
     +'</div>';
 }
 
-// ─── レポート生成・表示・ダウンロード ───
-let _reportCanvas=null;
+// ─── 山残り牌計算 ───
+function calcRemainingTiles(){
+  // 全プレイヤーの手に渡った牌を集計
+  const used={};
+  WE.forEach(function(w){
+    const init=gameData.initHands[w]||[];
+    const tsumo=gameData.players[w]?.tsumo||[];
+    const melds=gameData.players[w]?.melds||[];
+    // 初期手牌
+    init.forEach(function(t){const n=normalTile(t);used[n]=(used[n]||0)+1;});
+    // ツモ牌
+    tsumo.forEach(function(t){if(t&&t!=="?"){const n=normalTile(t);used[n]=(used[n]||0)+1;}});
+    // 副露で受け取った他家牌（nakiIdx位置の1枚のみ）
+    melds.forEach(function(m){
+      if(m.type==="ankan"||m.isAnkan)return; // 暗カンは自己牌なので加算しない
+      const nakiIdx=m.nakiIdxFixed!==null?m.nakiIdxFixed:0;
+      const t=(m.tiles||[])[nakiIdx];
+      if(t){const n=normalTile(t);used[n]=(used[n]||0)+1;}
+    });
+  });
+  // 各牌の残り枚数
+  const ALL_TILES=[];
+  for(let n=1;n<=9;n++)ALL_TILES.push(n+"m");
+  for(let n=1;n<=9;n++)ALL_TILES.push(n+"p");
+  for(let n=1;n<=9;n++)ALL_TILES.push(n+"s");
+  ["東","南","西","北","白","発","中"].forEach(function(t){ALL_TILES.push(t);});
+  const remaining={};
+  ALL_TILES.forEach(function(t){remaining[t]=Math.max(0,4-(used[t]||0));});
+  return remaining;
+}
+
+function buildYamaHTML(forPrint){
+  const rem=calcRemainingTiles();
+  // 色: 0=濃赤, 1=橙, 2=黄, 3=薄緑, 4=無色
+  const COLORS=["#222","#fb8c00","#fdd835","#81c784","#e8f5e9"];
+  const TCOLORS=["#fff","#fff","#333","#333","#999"];
+  const suits=[
+    {label:"萬",tiles:["1m","2m","3m","4m","5m","6m","7m","8m","9m"]},
+    {label:"筒",tiles:["1p","2p","3p","4p","5p","6p","7p","8p","9p"]},
+    {label:"索",tiles:["1s","2s","3s","4s","5s","6s","7s","8s","9s"]},
+    {label:"字",tiles:["東","南","西","北","白","発","中"]},
+  ];
+  const fs=forPrint?"10px":"11px";
+  const cellW=forPrint?"22px":"26px";
+  const cellH=forPrint?"20px":"24px";
+  let html='<div style="font-size:'+fs+';">';
+  // 凡例
+  html+='<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap;">';
+  [0,1,2,3,4].forEach(function(n){
+    html+='<span style="display:inline-flex;align-items:center;gap:3px;">'
+      +'<span style="width:14px;height:14px;background:'+COLORS[n]+';border-radius:2px;display:inline-block;"></span>'
+      +'<span style="color:var(--tx3);font-size:10px;">'+n+'枚</span></span>';
+  });
+  const total=Object.values(rem).reduce(function(a,b){return a+b;},0);
+  html+='<span style="margin-left:auto;color:var(--tx3);font-size:10px;">山残り計 <b style="color:var(--tx);">'+total+'</b>枚</span>';
+  html+='</div>';
+  // スーツ行
+  suits.forEach(function(suit){
+    html+='<div style="display:flex;align-items:center;gap:3px;margin-bottom:4px;">';
+    html+='<span style="font-size:10px;color:var(--tx3);width:16px;flex-shrink:0;">'+suit.label+'</span>';
+    suit.tiles.forEach(function(t){
+      const n=rem[t]??4;
+      const emoji=te(t);
+      html+='<div style="width:'+cellW+';height:'+cellH+';background:'+COLORS[n]
+        +';border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;">'
+        +'<span style="font-size:'+(forPrint?"11px":"13px")+';">'+emoji+'</span>'
+        +'<span style="font-size:9px;color:'+TCOLORS[n]+';line-height:1;">'+n+'</span>'
+        +'</div>';
+    });
+    html+='</div>';
+  });
+  html+='</div>';
+  return html;
+}
+
+function renderYamaCard(){
+  const card=document.getElementById("yama-card");
+  if(!card||!gameData)return;
+  card.style.display="block";
+  document.getElementById("yama-content").innerHTML=buildYamaHTML(false);
+}
 
 function buildReportHTML(){
   const m=gameData.meta;
   const title=m.title||(m.bakaze+"風"+m.kyoku+"局");
   const doraHtml=m.dora_indicator?te(m.dora_indicator):"なし";
+  const memo=(document.getElementById("report-memo")?.value||"").trim();
   let resultText="流局";
   if(m.winner){
     const loserText=m.loser?"（"+WJ[m.loser]+"家から）":"";
@@ -1177,29 +1688,44 @@ function buildReportHTML(){
     const isWin=m.winner===w;
     const isLoser=m.loser===w;
     const mHtml=meldHTML(pm);
-    return '<div style="border:1px solid #ccc;border-radius:8px;padding:12px;margin-bottom:10px;background:'+(isWin?"#eaf3de":isLoser?"#fcebeb":"#fff")+'">'
-      +'<div style="font-size:14px;font-weight:600;margin-bottom:8px;">'+te(WJ[w])+' '+WJ[w]+'家'+(isWin?" 🏆":"")+(isLoser?" ⚡放銃":"")+'</div>'
-      +'<div style="font-size:12px;color:#666;margin-bottom:2px;">初期配牌</div>'
-      +'<div style="font-size:20px;line-height:1.4;margin-bottom:6px;">'+th(ih)+'</div>'
-      +'<div style="font-size:12px;color:#666;margin-bottom:2px;">捨て牌（'+disc.length+'枚）</div>'
-      +'<div style="font-size:18px;line-height:1.5;margin-bottom:6px;word-break:break-all;">'+disc.map(te).join("")+'</div>'
-      +(pm.length?'<div style="font-size:12px;color:#666;margin-bottom:2px;">副露</div><div style="font-size:18px;margin-bottom:6px;">'+mHtml+'</div>':"")
-      +'<div style="font-size:12px;color:#666;margin-bottom:2px;">最終手牌</div>'
-      +'<div style="font-size:20px;line-height:1.4;">'+th(fh)+'</div>'
-      +'</div>';
+    return '<div style="border:1px solid #ccc;border-radius:6px;padding:10px 12px;margin-bottom:8px;background:'+(isWin?"#eaf3de":isLoser?"#fcebeb":"#fff")+';page-break-inside:avoid;">'
+      +'<div style="font-size:13px;font-weight:600;margin-bottom:6px;">'+te(WJ[w])+' '+WJ[w]+'家'+(isWin?" 🏆":"")+(isLoser?" ⚡放銃":"")+'</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;">'
+      +'<div><div style="font-size:10px;color:#888;margin-bottom:1px;">初期配牌</div>'
+      +'<div style="font-size:17px;line-height:1.4;word-break:break-all;">'+th(ih)+'</div></div>'
+      +'<div><div style="font-size:10px;color:#888;margin-bottom:1px;">最終手牌</div>'
+      +'<div style="font-size:17px;line-height:1.4;word-break:break-all;">'+th(fh)+'</div></div>'
+      +'<div style="grid-column:1/-1;"><div style="font-size:10px;color:#888;margin-bottom:1px;">捨て牌（'+disc.length+'枚）</div>'
+      +'<div style="font-size:15px;line-height:1.6;word-break:break-all;">'+disc.map(te).join("")+'</div></div>'
+      +(pm.length?'<div style="grid-column:1/-1;"><div style="font-size:10px;color:#888;margin-bottom:1px;">副露</div><div style="font-size:15px;">'+mHtml+'</div></div>':"")
+      +'</div></div>';
   }).join("");
-  return '<div id="report-inner" style="background:#fff;color:#1a1a18;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:760px;margin:0 auto;">'
-    +'<h2 style="font-size:18px;margin-bottom:4px;">🀄︎ 麻雀牌譜レポート</h2>'
-    +'<div style="font-size:20px;font-weight:600;margin-bottom:12px;">'+title+'</div>'
-    +'<div style="display:grid;grid-template-columns:repeat(3,auto);gap:8px 16px;margin-bottom:12px;font-size:13px;">'
-    +'<div><span style="color:#888;">場風</span> <b>'+m.bakaze+'</b></div>'
-    +'<div><span style="color:#888;">局</span> <b>'+m.kyoku+'局</b></div>'
-    +'<div><span style="color:#888;">本場</span> <b>'+m.honba+'本場</b></div>'
-    +'<div><span style="color:#888;">ドラ</span> <b>'+doraHtml+'</b></div>'
-    +'<div style="grid-column:2/-1;"><span style="color:#888;">結果</span> <b>'+resultText+'</b></div>'
+  const memoHtml=memo
+    ?'<div style="border:1px solid #ddd;border-radius:6px;padding:10px 12px;margin-bottom:8px;background:#fffdf5;page-break-inside:avoid;">'
+     +'<div style="font-size:10px;color:#888;margin-bottom:4px;">メモ</div>'
+     +'<div style="font-size:13px;white-space:pre-wrap;line-height:1.6;">'+memo.replace(/</g,"&lt;")+'</div>'
+     +'</div>'
+    :'';
+  const yamaHtml='<div style="border:1px solid #ddd;border-radius:6px;padding:10px 12px;margin-top:8px;background:#fafafa;page-break-inside:avoid;">'
+    +'<div style="font-size:10px;color:#888;margin-bottom:6px;font-weight:600;">山残り牌</div>'
+    +buildYamaHTML(true).replace(/var\(--tx3\)/g,"#999").replace(/var\(--tx\)/g,"#1a1a18")
+    +'</div>';
+  return '<div id="report-inner" style="background:#fff;color:#1a1a18;padding:16px 20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:720px;margin:0 auto;">'
+    +'<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px;">'
+    +'<h2 style="font-size:15px;margin:0;color:#555;">🀄︎ 麻雀牌譜レポート</h2>'
+    +'<span style="font-size:11px;color:#aaa;">'+new Date().toLocaleString("ja-JP")+'</span>'
     +'</div>'
+    +'<div style="font-size:19px;font-weight:700;margin-bottom:8px;">'+title+'</div>'
+    +'<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12px;padding:8px 10px;background:#f5f5f3;border-radius:6px;">'
+    +'<span><span style="color:#888;">場風</span> <b>'+m.bakaze+'</b></span>'
+    +'<span><span style="color:#888;">局</span> <b>'+m.kyoku+'局</b></span>'
+    +'<span><span style="color:#888;">本場</span> <b>'+m.honba+'本場</b></span>'
+    +'<span><span style="color:#888;">ドラ</span> <b>'+doraHtml+'</b></span>'
+    +'<span><span style="color:#888;">結果</span> <b>'+resultText+'</b></span>'
+    +'</div>'
+    +memoHtml
     +playersHtml
-    +'<div style="font-size:11px;color:#aaa;text-align:right;margin-top:8px;">生成: '+new Date().toLocaleString("ja-JP")+'</div>'
+    +yamaHtml
     +'</div>';
 }
 
@@ -1214,36 +1740,32 @@ function generateReport(){
 }
 
 function downloadReport(){
-  if(typeof html2canvas==="undefined"||typeof jsPDF==="undefined"){
-    alert("PDFライブラリを読み込み中です。少し待ってから再度お試しください。");return;
+  // report-innerが表示されていなければ先に生成
+  if(!document.getElementById("report-inner")){
+    generateReport();
+    setTimeout(downloadReport, 200);
+    return;
   }
-  const btn=document.getElementById("btn-dl-pdf");
-  const orig=btn.textContent;btn.textContent="生成中...";btn.disabled=true;
-  const inner=document.getElementById("report-inner");
-  if(!inner){btn.textContent=orig;btn.disabled=false;return;}
-  html2canvas(inner,{scale:1.5,useCORS:true,backgroundColor:"#ffffff",logging:false}).then(function(canvas){
-    const pdf=new jsPDF.jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
-    const pageW=210,pageH=297,margin=10;
-    const imgW=pageW-margin*2;
-    const imgH=canvas.height*(imgW/canvas.width);
-    const onePageH=pageH-margin*2;
-    const totalPages=Math.ceil(imgH/onePageH);
-    for(let p=0;p<totalPages;p++){
-      if(p>0)pdf.addPage();
-      const srcY=p*onePageH*(canvas.width/imgW);
-      const srcH=Math.min(onePageH*(canvas.width/imgW),canvas.height-srcY);
-      const sl=document.createElement("canvas");
-      sl.width=canvas.width;sl.height=srcH;
-      sl.getContext("2d").drawImage(canvas,0,srcY,canvas.width,srcH,0,0,canvas.width,srcH);
-      pdf.addImage(sl.toDataURL("image/jpeg",0.92),"JPEG",margin,margin,imgW,srcH*(imgW/canvas.width));
-    }
-    const titleStr=(gameData.meta.title||gameData.meta.bakaze+"風"+gameData.meta.kyoku+"局").replace(/\s/g,"_");
-    pdf.save("mahjong_"+titleStr+".pdf");
-    btn.textContent=orig;btn.disabled=false;
-  }).catch(function(e){
-    alert("PDF生成に失敗しました: "+e.message);
-    btn.textContent=orig;btn.disabled=false;
-  });
+  // 印刷用の隠しフレームを作成
+  let frame=document.getElementById("print-frame");
+  if(frame)frame.remove();
+  frame=document.createElement("div");
+  frame.id="print-frame";
+  frame.style.cssText="display:none;position:fixed;inset:0;background:#fff;z-index:9999;padding:20px;overflow:auto;";
+  frame.innerHTML=document.getElementById("report-inner").outerHTML;
+  document.body.appendChild(frame);
+
+  // iOSのSafariは印刷ダイアログが出るのでその旨案内
+  const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  if(isIOS){
+    alert("印刷ダイアログが開きます。「PDFに保存」を選んでください。");
+  }
+  window.print();
+  // 印刷後にフレームを削除
+  setTimeout(function(){
+    const f=document.getElementById("print-frame");
+    if(f)f.remove();
+  },1000);
 }
 
 // ─── localStorage 保存・復元 ───
@@ -1302,15 +1824,22 @@ function clearSavedData(){
 function stepTo(idx){cur=Math.max(0,Math.min(idx,steps.length-1));renderStep(cur);}
 function stepFwd(){if(cur<steps.length-1)stepTo(cur+1);}
 function stepBack(){if(cur>0)stepTo(cur-1);}
+function setPlayBtns(playing){
+  ["b-play","fc-play"].forEach(function(id){
+    const el=document.getElementById(id);
+    if(el)el.textContent=playing?"⏸ 停止":"▶ 再生";
+  });
+}
 function togglePlay(){
-  const btn=document.getElementById("b-play");
-  if(timer){clearInterval(timer);timer=null;btn.textContent="▶ 再生";}
-  else{
+  if(timer){
+    clearInterval(timer);timer=null;
+    setPlayBtns(false);
+  } else {
     if(cur>=steps.length-1)stepTo(0);
     const ms=SPD[+document.getElementById("speed-sl").value-1];
-    btn.textContent="⏸ 停止";
+    setPlayBtns(true);
     timer=setInterval(function(){
-      if(cur>=steps.length-1){clearInterval(timer);timer=null;btn.textContent="▶ 再生";}
+      if(cur>=steps.length-1){clearInterval(timer);timer=null;setPlayBtns(false);}
       else stepFwd();
     },ms);
   }
