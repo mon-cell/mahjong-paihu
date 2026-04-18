@@ -123,7 +123,16 @@ select:focus{box-shadow:0 0 0 2px var(--b)}
 .act-label{font-size:11px;padding:2px 7px;border-radius:20px;background:var(--b-bg);color:var(--b-t)}
 .naki-label{font-size:11px;padding:2px 7px;border-radius:20px;background:var(--tl-bg);color:var(--tl)}
 .prow-body{padding:10px 14px;display:grid;grid-template-columns:1fr 2fr 1fr;gap:14px;align-items:start}
-@media(max-width:600px){.prow-body{grid-template-columns:1fr;gap:8px}}
+@media(max-width:700px){
+  .prow-body{grid-template-columns:1fr;gap:6px}
+  .mgrid{grid-template-columns:repeat(2,1fr)}
+  .ctrl button{padding:10px 14px;font-size:16px}
+  .tile-btn{min-width:36px;font-size:20px}
+  .final-block{padding:10px}
+  .res-row{flex-direction:column;align-items:flex-start}
+  .res-row label{min-width:unset}
+  .res-row select{max-width:100%}
+}
 .section-title{font-size:10px;color:var(--tx3);margin-bottom:3px;letter-spacing:.04em;text-transform:uppercase}
 .tiles-line{font-size:22px;line-height:1.35;white-space:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
 .tiles-line::-webkit-scrollbar{height:2px}
@@ -299,9 +308,19 @@ select:focus{box-shadow:0 0 0 2px var(--b)}
     <div id="result-content"></div>
   </div>
   <div style="text-align:center;margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
-    <button onclick="saveToPDF()" style="background:var(--r-bg);border-color:var(--r);color:var(--r);">📄 PDFを保存</button>
+    <button onclick="generateReport()" style="background:var(--r-bg);border-color:var(--r);color:var(--r);">📄 レポートを生成</button>
     <button onclick="saveToLocalStorage()" style="background:var(--g-bg);border-color:var(--g);color:var(--g);">💾 この結果を保存</button>
     <button onclick="location.reload()">↩ 最初からやり直す</button>
+  </div>
+  <!-- レポートプレビュー -->
+  <div id="report-area" style="display:none;margin-top:12px;">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+        <div class="slabel" style="margin:0;">📄 レポートプレビュー</div>
+        <button id="btn-dl-pdf" onclick="downloadReport()" style="background:var(--b);border-color:var(--b);color:#e6f1fb;font-size:13px;padding:7px 16px;">⬇ レポートをダウンロード</button>
+      </div>
+      <div id="report-preview"></div>
+    </div>
   </div>
 </div>
 </div>
@@ -358,7 +377,10 @@ function meldHTML(melds){
   if(!melds||!melds.length)return "";
   return melds.map(function(m){
     const lbl={pon:"ポン",chi:"チー",kan:"カン",ankan:"暗カン"}[m.type]||m.type;
-    return '<span class="meld-group" title="'+lbl+'">'+(m.tiles||[]).map(te).join("")+'</span>';
+    const discPart=m.discTile
+      ?'<span style="font-size:13px;opacity:.7;margin:0 1px;">→</span>'+te(m.discTile)
+      :'';
+    return '<span class="meld-group" title="'+lbl+'">'+(m.tiles||[]).map(te).join("")+discPart+'</span>';
   }).join("");
 }
 function dc(o){return JSON.parse(JSON.stringify(o))}
@@ -368,6 +390,11 @@ const ALPHA_MAP={e:"東",s:"南",w:"西",n:"北",h:"白",f:"発",c:"中"};
 function parseTiles(s){
   if(!s)return[];
   s=s.replace(/[　,、，]+/g," ").replace(/\s+/g," ").trim();
+  // スペースなし混在対応: アルファベット字牌と数字牌の境界でトークン分割
+  // 例: "eee5p" → "e e e 5p", "456p789s" → "456p 789s"
+  s=s.replace(/([eswhnfc])(?=[eswhnfc0-9東南西北白発中])/gi,"$1 ")
+     .replace(/([mps])(?=[0-9eswhnfc東南西北白発中])/gi,"$1 ")
+     .replace(/\s+/g," ").trim();
   const tokens=s.split(" ").filter(Boolean);
   const result=[];
   for(const tok of tokens){
@@ -383,14 +410,93 @@ function parseTiles(s){
   }
   return result;
 }
+
+// 牌をマンズ→ピンズ→ソーズ→字牌、数字昇順にソート
+const TILE_ORDER=(function(){
+  const o={};
+  // 数牌: m=0-8, p=9-17, s=18-26 (r5xは5xと同じ順位+0.5)
+  ["m","p","s"].forEach(function(suit,si){
+    for(let n=1;n<=9;n++) o[n+suit]=si*9+(n-1);
+    o["r5"+suit]=si*9+4.5;
+  });
+  // 字牌: 東南西北白発中
+  ["東","南","西","北","白","発","中"].forEach(function(t,i){o[t]=27+i;});
+  return o;
+})();
+function sortTiles(tiles){
+  return tiles.slice().sort(function(a,b){
+    const oa=TILE_ORDER[a]??99, ob=TILE_ORDER[b]??99;
+    return oa-ob;
+  });
+}
 function parseMelds(s){
   if(!s)return[];
   const result=[];
   s.replace(/[　,、，]+/g," ").trim().split(/\s+/).filter(Boolean).forEach(function(tok){
-    const m=tok.match(/^(pon|chi|kan|ankan):(.+)$/i);
-    if(m)result.push({type:m[1].toLowerCase(),tiles:parseTiles(m[2])});
+    // トークン形式: type:tiles[@nakiIdx][>discardTile]
+    // 例: pon:発@1>3p  chi:3m4m5m>6p  kan:中@0
+    const discM=tok.match(/^(.+?)>(.+)$/);
+    const discTile=discM?discM[2]:null;
+    const base=discM?discM[1]:tok;
+
+    const atM=base.match(/^(.+?)@(\d)$/);
+    const rawForParse=atM?atM[1]:base;
+    const nakiIdxFixed=atM?parseInt(atM[2]):null;
+
+    const m=rawForParse.match(/^(pon|chi|kan|ankan):(.+)$/i);
+    if(!m)return;
+    const type=m[1].toLowerCase();
+    let tiles=parseTiles(m[2]);
+    // ankan は自動展開、鳴き元なし
+    if(type==="ankan"&&tiles.length===1){tiles=[tiles[0],tiles[0],tiles[0],tiles[0]];}
+    // 1枚入力でnakiIdx未確定 → 形/鳴き元選択が必要
+    const needPickShape=(tiles.length===1&&type!=="ankan"&&nakiIdxFixed===null);
+    // pon/kanフル枚数でもnakiIdx未確定 → 鳴き元選択が必要
+    const needPickFrom=!needPickShape&&nakiIdxFixed===null&&(type==="pon"||type==="kan");
+    // 形・鳴き元が確定しているがdiscTileがない → 出し牌選択が必要（kanは不要）
+    const needPickDisc=!needPickShape&&!needPickFrom&&discTile===null&&(type==="pon"||type==="chi");
+    result.push({type,tiles,
+      needPickShape,needPickFrom,needPickDisc,
+      nakiIdxFixed,discTile,rawToken:tok});
   });
   return result;
+}
+
+// ポンのあり得る3パターン（鳴いた牌の位置）
+// 上家(0)・対面(1)・下家(2) → 表示上: [naki, own, own] / [own, naki, own] / [own, own, naki]
+function ponOptions(tile){
+  const t=tile;
+  return [
+    {tiles:[t,t,t],nakiIdx:0,from:"上家から"},
+    {tiles:[t,t,t],nakiIdx:1,from:"対面から"},
+    {tiles:[t,t,t],nakiIdx:2,from:"下家から"},
+  ];
+}
+
+// カンのあり得る3パターン（鳴いた牌の位置）
+function kanOptions(tile){
+  const t=tile;
+  return [
+    {tiles:[t,t,t,t],nakiIdx:0,from:"上家から"},
+    {tiles:[t,t,t,t],nakiIdx:1,from:"対面から"},
+    {tiles:[t,t,t,t],nakiIdx:2,from:"下家から"},
+  ];
+}
+
+// チーのあり得る3パターンを返す
+// 戻り値: [{tiles:[t0,t1,t2], nakiIdx:0}, ...] nakiIdxが鳴いた牌の位置
+function chiOptions(nakiTile){
+  const mc=nakiTile.match(/^(\d)([mps])$/i);
+  if(!mc)return[];
+  const n=parseInt(mc[1]),s=mc[2].toLowerCase();
+  const opts=[];
+  // パターン1: naki が先頭 → [n, n+1, n+2]
+  if(n<=7) opts.push({tiles:[n+s,(n+1)+s,(n+2)+s],nakiIdx:0});
+  // パターン2: naki が中間 → [n-1, n, n+1]
+  if(n>=2&&n<=8) opts.push({tiles:[(n-1)+s,n+s,(n+1)+s],nakiIdx:1});
+  // パターン3: naki が末尾 → [n-2, n-1, n]
+  if(n>=3) opts.push({tiles:[(n-2)+s,(n-1)+s,n+s],nakiIdx:2});
+  return opts;
 }
 
 // 同じ牌が5枚以上チェック（赤ドラを通常牌として扱う）
@@ -465,8 +571,9 @@ function renderInput(){
 function updInitPrev(w){
   const val=document.getElementById("ta-init-"+w)?.value||"";
   const tiles=parseTiles(val);
+  const sorted=sortTiles(tiles);
   const el=document.getElementById("hp-init-"+w);
-  if(el)el.innerHTML=th(tiles);
+  if(el)el.innerHTML=th(sorted);
   // リアルタイム警告
   const warns=checkTileCount(tiles);
   const wel=document.getElementById("warn-init-"+w);
@@ -543,7 +650,7 @@ function deleteTile(){
 }
 
 function markReady(w){
-  initHands[w]=parseTiles(document.getElementById("ta-init-"+w)?.value||"");
+  initHands[w]=sortTiles(parseTiles(document.getElementById("ta-init-"+w)?.value||""));
   readyFlags[w]=true;
   // 全員Readyならサマリーへ
   if(WE.every(function(x){return readyFlags[x];})){
@@ -665,20 +772,161 @@ function buildFinalInputs(){
       +' oninput="updFP(\'hand\',\''+w+'\')"'
       +' onfocus="openFinalKbd(\'fd-hand-'+w+'\',\'hand\',\''+w+'\')"></textarea>'
       +'<div class="hprev" id="fp-hand-'+w+'" style="font-size:17px;margin-top:4px;"></div>'
-      +'<span class="flabel">副露（なければ空欄） 例: pon:発発発 chi:3m4m5m</span>'
-      +'<textarea id="fd-meld-'+w+'" class="ta-sm" placeholder="pon:xxx chi:xxx kan:xxx"'
+      +'<span class="flabel">副露（なければ空欄）</span>'
+      +'<div style="font-size:11px;color:var(--tx3);margin-bottom:4px;line-height:1.7;">'
+      +'すべて <b>1枚入力でOK</b> → タップで形・鳴き元を選択できます<br>'
+      +'<code style="background:var(--sf2);padding:1px 4px;border-radius:3px;">pon:発</code>　<code style="background:var(--sf2);padding:1px 4px;border-radius:3px;">kan:中</code>　<code style="background:var(--sf2);padding:1px 4px;border-radius:3px;">chi:3m</code>　（フル入力も可）'
+      +'</div>'
+      +'<textarea id="fd-meld-'+w+'" class="ta-sm" placeholder="例: pon:発 chi:3m4m5m kan:中"'
       +' style="height:38px;font-size:13px;"'
+      +' oninput="updMeldPrev(\''+w+'\')"'
       +' onfocus="openFinalKbd(\'fd-meld-'+w+'\',\'meld\',\''+w+'\')"></textarea>'
-      +'<div id="kbd-slot-'+w+'" style="margin-top:6px;"></div>'
+      +'<div id="fp-meld-'+w+'" style="margin-top:6px;min-height:20px;font-size:17px;line-height:1.5;"></div>'
+      +'<div id="kbd-slot-'+w+'" style="margin-top:4px;"></div>'
       +'</div>';
   }).join("");
 }
 
 function updFP(type,w){
   const val=document.getElementById("fd-"+type+"-"+w)?.value||"";
+  const tiles=parseTiles(val);
+  // 捨て牌は打牌順を保持、手牌はソート
+  const display=(type==="disc")?tiles:sortTiles(tiles);
   const el=document.getElementById("fp-"+type+"-"+w);
-  if(el)el.innerHTML=th(parseTiles(val));
+  if(el)el.innerHTML=th(display);
 }
+
+// 牌列のHTML生成（nakiIdxの牌を強調）
+function tilesWithNakiHTML(tiles,nakiIdx){
+  return tiles.map(function(t,ti){
+    const emoji=te(t);
+    if(ti===nakiIdx){
+      return '<span style="background:var(--a-bg);border:1.5px solid var(--a);border-radius:4px;padding:0 2px;font-size:20px;line-height:1.3;display:inline-block;">'+emoji+'</span>';
+    }
+    return '<span style="font-size:20px;line-height:1.3;">'+emoji+'</span>';
+  }).join('<span style="font-size:14px;"> </span>');
+}
+
+// 副露プレビュー
+function updMeldPrev(w){
+  const ta=document.getElementById("fd-meld-"+w);
+  const val=ta?.value||"";
+  const el=document.getElementById("fp-meld-"+w);
+  if(!el)return;
+  const melds=parseMelds(val);
+  if(!melds.length){el.innerHTML="";return;}
+
+  const LCOLOR={
+    pon:"background:#fbeaf0;border:1px solid #d4537e;color:#72243e",
+    chi:"background:var(--tl-bg);border:1px solid var(--tl);color:var(--tl)",
+    kan:"background:var(--a-bg);border:1px solid var(--a);color:var(--a-t)",
+    ankan:"background:var(--a-bg);border:1px solid var(--a);color:var(--a-t)"
+  };
+
+  let html="";
+  melds.forEach(function(m){
+    const lbl={pon:"ポン",chi:"チー",kan:"カン",ankan:"暗カン"}[m.type]||m.type;
+    const lc=LCOLOR[m.type]||"";
+
+    // ── STEP1: 形・鳴き元選択 ──
+    if(m.needPickShape||m.needPickFrom){
+      let opts=[],hint="";
+      if(m.type==="chi"){
+        opts=chiOptions(m.tiles[0]);
+        hint="チーの形を選んでください";
+        if(!opts.length){
+          html+='<div style="font-size:12px;color:var(--r);margin-bottom:6px;">⚠ '+te(m.tiles[0])+'はチーできません</div>';
+          return;
+        }
+      } else if(m.type==="pon"){
+        opts=m.needPickShape?ponOptions(m.tiles[0]):ponOptions(m.tiles[0]);
+        hint="どこから鳴きましたか？";
+      } else if(m.type==="kan"){
+        opts=kanOptions(m.tiles[0]);
+        hint="どこから鳴きましたか？";
+      }
+      html+='<div style="margin-bottom:10px;">'
+        +'<div style="font-size:11px;color:var(--tx3);margin-bottom:5px;">'
+        +'<span style="font-size:11px;padding:2px 7px;border-radius:20px;margin-right:5px;'+lc+'">'+lbl+'</span>'
+        +hint+' <span style="opacity:.7;">（鳴いた牌 = <span style="background:var(--a-bg);border:1px solid var(--a);border-radius:3px;padding:0 3px;color:var(--a-t);">強調</span>）</span>'
+        +'</div><div style="display:flex;flex-direction:column;gap:5px;">';
+      opts.forEach(function(opt){
+        const tilesHtml=tilesWithNakiHTML(opt.tiles,opt.nakiIdx);
+        const sep=(m.type==="chi")?"":"@"+opt.nakiIdx;
+        const tokStr=m.type+":"+opt.tiles.join("")+sep;
+        const fromLabel=opt.from?'<span style="font-size:11px;color:var(--tx2);min-width:4.5em;flex-shrink:0;">'+opt.from+'</span>':'';
+        html+='<button onclick="selectMeld(\''+w+'\',\''+m.rawToken+'\',\''+tokStr+'\')" '
+          +'style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:8px;border:1px solid var(--bd2);background:var(--sf);cursor:pointer;text-align:left;-webkit-tap-highlight-color:transparent;width:100%;">'
+          +fromLabel+'<span style="display:flex;align-items:center;gap:2px;flex-wrap:nowrap;">'+tilesHtml+'</span>'
+          +'</button>';
+      });
+      html+='</div></div>';
+
+    // ── STEP2: 出し牌選択（pon/chiのみ） ──
+    } else if(m.needPickDisc){
+      const nakiIdx=m.nakiIdxFixed!==null?m.nakiIdxFixed:0;
+      const tilesHtml=tilesWithNakiHTML(m.tiles,nakiIdx);
+      const discTiles=parseTiles(document.getElementById("fd-disc-"+w)?.value||"");
+      html+='<div style="margin-bottom:10px;">'
+        // 確定した副露表示
+        +'<div style="display:flex;align-items:center;gap:5px;margin-bottom:7px;">'
+        +'<span style="font-size:11px;padding:2px 7px;border-radius:20px;'+lc+'">'+lbl+'</span>'
+        +'<span style="display:flex;align-items:center;gap:2px;">'+tilesHtml+'</span>'
+        +'<span style="font-size:13px;color:var(--tx3);margin-left:4px;">→ ?</span>'
+        +'</div>'
+        // 出し牌選択
+        +'<div style="font-size:11px;color:var(--tx3);margin-bottom:5px;">'
+        +lbl+'出しの牌を選んでください（捨て牌から）'
+        +'</div>';
+      if(!discTiles.length){
+        html+='<div style="font-size:12px;color:var(--tx3);">← 先に捨て牌を入力してください</div>';
+      } else {
+        html+='<div style="display:flex;gap:4px;flex-wrap:wrap;">';
+        discTiles.forEach(function(dt){
+          html+='<button onclick="selectDiscard(\''+w+'\',\''+m.rawToken+'\',\''+dt+'\')" '
+            +'style="font-size:22px;padding:3px 6px;border-radius:6px;border:1px solid var(--bd2);background:var(--sf);cursor:pointer;-webkit-tap-highlight-color:transparent;line-height:1.3;">'
+            +te(dt)+'</button>';
+        });
+        html+='</div>';
+      }
+      html+='</div>';
+
+    // ── 確定済みプレビュー ──
+    } else {
+      const nakiIdx=m.nakiIdxFixed!==null?m.nakiIdxFixed:0;
+      const tilesHtml=tilesWithNakiHTML(m.tiles,nakiIdx);
+      const discHtml=m.discTile
+        ?'<span style="font-size:13px;color:var(--tx3);">→</span><span style="font-size:20px;line-height:1.3;">'+te(m.discTile)+'</span>'
+        :'';
+      html+='<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px;margin-bottom:4px;">'
+        +'<span style="font-size:11px;padding:2px 7px;border-radius:20px;'+lc+'">'+lbl+'</span>'
+        +'<span style="display:flex;align-items:center;gap:2px;">'+tilesHtml+'</span>'
+        +discHtml
+        +'</span>';
+    }
+  });
+  el.innerHTML=html;
+}
+
+// 形・鳴き元の選択確定
+function selectMeld(w,oldTok,newTok){
+  const ta=document.getElementById("fd-meld-"+w);
+  if(!ta)return;
+  ta.value=ta.value.replace(oldTok,newTok);
+  ta.dispatchEvent(new Event("input"));
+}
+
+// 出し牌の選択確定
+function selectDiscard(w,oldTok,discTile){
+  const ta=document.getElementById("fd-meld-"+w);
+  if(!ta)return;
+  ta.value=ta.value.replace(oldTok,oldTok+">"+discTile);
+  ta.dispatchEvent(new Event("input"));
+}
+
+function selectChi(w,oldTok,newTok){selectMeld(w,oldTok,newTok);}
+
+
 
 // 終局入力キーボード（特殊ボタン付き）
 function openFinalKbd(taId,field,wind){
@@ -745,7 +993,7 @@ function buildFromText(){
   const discards={},finalHands={},melds={};
   WE.forEach(function(w){
     discards[w]=parseTiles(document.getElementById("fd-disc-"+w)?.value||"");
-    finalHands[w]=parseTiles(document.getElementById("fd-hand-"+w)?.value||"");
+    finalHands[w]=sortTiles(parseTiles(document.getElementById("fd-hand-"+w)?.value||""));
     melds[w]=parseMelds(document.getElementById("fd-meld-"+w)?.value||"");
   });
 
@@ -909,49 +1157,92 @@ function renderResult(){
     +'</div>';
 }
 
-// ─── PDF生成 ───
-function saveToPDF(){
+// ─── レポート生成・表示・ダウンロード ───
+let _reportCanvas=null;
+
+function buildReportHTML(){
+  const m=gameData.meta;
+  const title=m.title||(m.bakaze+"風"+m.kyoku+"局");
+  const doraHtml=m.dora_indicator?te(m.dora_indicator):"なし";
+  let resultText="流局";
+  if(m.winner){
+    const loserText=m.loser?"（"+WJ[m.loser]+"家から）":"";
+    resultText=WJ[m.winner]+"家 "+(m.result_type==="tsumo"?"ツモ":"ロン"+loserText)+"和了"+(m.score?" "+m.score+"点":"");
+  }
+  let playersHtml=WE.map(function(w){
+    const ih=gameData.initHands[w]||[];
+    const fh=gameData.players[w]?.hand||[];
+    const disc=gameData.discards[w]||[];
+    const pm=gameData.players[w]?.melds||[];
+    const isWin=m.winner===w;
+    const isLoser=m.loser===w;
+    const mHtml=meldHTML(pm);
+    return '<div style="border:1px solid #ccc;border-radius:8px;padding:12px;margin-bottom:10px;background:'+(isWin?"#eaf3de":isLoser?"#fcebeb":"#fff")+'">'
+      +'<div style="font-size:14px;font-weight:600;margin-bottom:8px;">'+te(WJ[w])+' '+WJ[w]+'家'+(isWin?" 🏆":"")+(isLoser?" ⚡放銃":"")+'</div>'
+      +'<div style="font-size:12px;color:#666;margin-bottom:2px;">初期配牌</div>'
+      +'<div style="font-size:20px;line-height:1.4;margin-bottom:6px;">'+th(ih)+'</div>'
+      +'<div style="font-size:12px;color:#666;margin-bottom:2px;">捨て牌（'+disc.length+'枚）</div>'
+      +'<div style="font-size:18px;line-height:1.5;margin-bottom:6px;word-break:break-all;">'+disc.map(te).join("")+'</div>'
+      +(pm.length?'<div style="font-size:12px;color:#666;margin-bottom:2px;">副露</div><div style="font-size:18px;margin-bottom:6px;">'+mHtml+'</div>':"")
+      +'<div style="font-size:12px;color:#666;margin-bottom:2px;">最終手牌</div>'
+      +'<div style="font-size:20px;line-height:1.4;">'+th(fh)+'</div>'
+      +'</div>';
+  }).join("");
+  return '<div id="report-inner" style="background:#fff;color:#1a1a18;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:760px;margin:0 auto;">'
+    +'<h2 style="font-size:18px;margin-bottom:4px;">🀄︎ 麻雀牌譜レポート</h2>'
+    +'<div style="font-size:20px;font-weight:600;margin-bottom:12px;">'+title+'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(3,auto);gap:8px 16px;margin-bottom:12px;font-size:13px;">'
+    +'<div><span style="color:#888;">場風</span> <b>'+m.bakaze+'</b></div>'
+    +'<div><span style="color:#888;">局</span> <b>'+m.kyoku+'局</b></div>'
+    +'<div><span style="color:#888;">本場</span> <b>'+m.honba+'本場</b></div>'
+    +'<div><span style="color:#888;">ドラ</span> <b>'+doraHtml+'</b></div>'
+    +'<div style="grid-column:2/-1;"><span style="color:#888;">結果</span> <b>'+resultText+'</b></div>'
+    +'</div>'
+    +playersHtml
+    +'<div style="font-size:11px;color:#aaa;text-align:right;margin-top:8px;">生成: '+new Date().toLocaleString("ja-JP")+'</div>'
+    +'</div>';
+}
+
+function generateReport(){
+  const area=document.getElementById("report-area");
+  const prev=document.getElementById("report-preview");
+  area.style.display="block";
+  prev.innerHTML='<div style="text-align:center;padding:20px;color:var(--tx3);">生成中...</div>';
+  _reportCanvas=null;
+  area.scrollIntoView({behavior:"smooth",block:"start"});
+  prev.innerHTML=buildReportHTML();
+}
+
+function downloadReport(){
   if(typeof html2canvas==="undefined"||typeof jsPDF==="undefined"){
     alert("PDFライブラリを読み込み中です。少し待ってから再度お試しください。");return;
   }
-  const btn=document.querySelector('[onclick="saveToPDF()"]');
-  const origText=btn.textContent;
-  btn.textContent="生成中...";btn.disabled=true;
-  // PDF用の印刷エリアを生成
-  const printEl=document.getElementById("ph-player").cloneNode(true);
-  // 戻るボタンと操作系を非表示
-  printEl.querySelectorAll(".back-btn,.ctrl,.srow,.pbar,.elog,#result-card+div").forEach(function(el){el.style.display="none";});
-  printEl.style.cssText="position:fixed;left:-9999px;top:0;width:794px;background:#fff;padding:24px;font-size:13px;";
-  document.body.appendChild(printEl);
-
-  html2canvas(printEl,{scale:1.5,useCORS:true,backgroundColor:"#ffffff",logging:false}).then(function(canvas){
-    document.body.removeChild(printEl);
+  const btn=document.getElementById("btn-dl-pdf");
+  const orig=btn.textContent;btn.textContent="生成中...";btn.disabled=true;
+  const inner=document.getElementById("report-inner");
+  if(!inner){btn.textContent=orig;btn.disabled=false;return;}
+  html2canvas(inner,{scale:1.5,useCORS:true,backgroundColor:"#ffffff",logging:false}).then(function(canvas){
     const pdf=new jsPDF.jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
     const pageW=210,pageH=297,margin=10;
     const imgW=pageW-margin*2;
     const imgH=canvas.height*(imgW/canvas.width);
-    let y=margin;
-    // 複数ページ対応
     const onePageH=pageH-margin*2;
     const totalPages=Math.ceil(imgH/onePageH);
     for(let p=0;p<totalPages;p++){
       if(p>0)pdf.addPage();
       const srcY=p*onePageH*(canvas.width/imgW);
       const srcH=Math.min(onePageH*(canvas.width/imgW),canvas.height-srcY);
-      const sliceCanvas=document.createElement("canvas");
-      sliceCanvas.width=canvas.width;
-      sliceCanvas.height=srcH;
-      sliceCanvas.getContext("2d").drawImage(canvas,0,srcY,canvas.width,srcH,0,0,canvas.width,srcH);
-      const sliceData=sliceCanvas.toDataURL("image/jpeg",0.92);
-      const sliceH=srcH*(imgW/canvas.width);
-      pdf.addImage(sliceData,"JPEG",margin,margin,imgW,sliceH);
+      const sl=document.createElement("canvas");
+      sl.width=canvas.width;sl.height=srcH;
+      sl.getContext("2d").drawImage(canvas,0,srcY,canvas.width,srcH,0,0,canvas.width,srcH);
+      pdf.addImage(sl.toDataURL("image/jpeg",0.92),"JPEG",margin,margin,imgW,srcH*(imgW/canvas.width));
     }
-    const title=(gameData.meta.title||gameData.meta.bakaze+"風"+gameData.meta.kyoku+"局").replace(/\s/g,"_");
-    pdf.save("mahjong_"+title+".pdf");
-    btn.textContent=origText;btn.disabled=false;
+    const titleStr=(gameData.meta.title||gameData.meta.bakaze+"風"+gameData.meta.kyoku+"局").replace(/\s/g,"_");
+    pdf.save("mahjong_"+titleStr+".pdf");
+    btn.textContent=orig;btn.disabled=false;
   }).catch(function(e){
     alert("PDF生成に失敗しました: "+e.message);
-    btn.textContent=origText;btn.disabled=false;
+    btn.textContent=orig;btn.disabled=false;
   });
 }
 
