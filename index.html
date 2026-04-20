@@ -144,6 +144,7 @@ select:focus{box-shadow:0 0 0 2px var(--b)}
   .res-row{flex-direction:column;align-items:flex-start}
   .res-row label{min-width:unset}
   .res-row select{max-width:100%}
+  .tsumo-disc-grid{grid-template-columns:1fr!important;}
 }
 .section-title{font-size:10px;color:var(--tx3);margin-bottom:3px;letter-spacing:.04em;text-transform:uppercase}
 .tiles-line{font-size:22px;line-height:1.35;white-space:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
@@ -171,6 +172,12 @@ select:focus{box-shadow:0 0 0 2px var(--b)}
 .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;margin-right:4px;margin-bottom:4px}
 .tag.am{background:var(--a-bg);color:var(--a-t)}.tag.gr{background:var(--g-bg);color:var(--g)}
 #ph-input{display:none}#ph-final{display:none}#ph-player{display:none}
+/* 表示タブ */
+.vtab{font-size:12px;padding:4px 10px;border-radius:20px;border:1px solid var(--bd2);
+  background:var(--sf);color:var(--tx2);cursor:pointer;white-space:nowrap;
+  -webkit-tap-highlight-color:transparent;transition:background .15s;}
+.vtab.on{background:var(--b);border-color:var(--b);color:#e6f1fb;font-weight:600;}
+
 /* フローティング再生コントロール（上部固定） */
 #float-ctrl{
   display:none;position:fixed;top:0;left:0;right:0;z-index:100;
@@ -243,6 +250,12 @@ body.playing-mode .wrap{padding-top:76px;padding-bottom:20px;}
 <h1>🀄︎ 麻雀牌譜プレイヤー</h1>
 <p class="sub">① 初期手牌入力 → ② 終局データ入力 → ③ 牌譜再生</p>
 <div id="restore-banner" style="display:none;margin-bottom:12px;"></div>
+<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+  <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;padding:7px 14px;background:var(--sf);border:.5px solid var(--bd2);border-radius:var(--ra);font-size:13px;">
+    📥 JSONを読み込む
+    <input type="file" accept=".json" style="display:none;" onchange="importJSON(this)">
+  </label>
+</div>
 
 <!-- ① 初期手牌 -->
 <div id="ph-input">
@@ -267,6 +280,7 @@ body.playing-mode .wrap{padding-top:76px;padding-bottom:20px;}
 <!-- ② 終局データ -->
 <div id="ph-final">
   <button class="back-btn" onclick="backToInput()">← ① 初期手牌入力に戻る</button>
+  <div id="next-game-banner"></div>
 
   <!-- 局情報 -->
   <div class="card">
@@ -322,14 +336,27 @@ body.playing-mode .wrap{padding-top:76px;padding-bottom:20px;}
       </div>
       <div class="res-row" id="row-loser" style="display:none;">
         <label>振込者</label>
-        <select id="res-loser">
+        <select id="res-loser" onchange="calcEndScores()">
           <option value="">選択してください</option>
         </select>
       </div>
-      <div class="res-row" id="row-score" style="display:none;">
+      <div class="res-row" id="row-tenpai" style="display:none;">
+    <label>テンパイ者</label>
+    <div style="flex:1;display:flex;flex-wrap:wrap;gap:6px;" id="tenpai-checkboxes">
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="tenpai-east" onchange="calcEndScores()"><span>東家</span></label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="tenpai-south" onchange="calcEndScores()"><span>南家</span></label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="tenpai-west" onchange="calcEndScores()"><span>西家</span></label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" id="tenpai-north" onchange="calcEndScores()"><span>北家</span></label>
+    </div>
+  </div>
+  <div class="res-row" id="row-score" style="display:none;">
         <label>点数</label>
         <div style="flex:1;">
-          <input type="text" id="res-score" placeholder="例: 3900" style="max-width:140px;margin-bottom:6px;">
+          <input type="text" id="res-score" placeholder="例: 3900" style="max-width:140px;margin-bottom:6px;" oninput="calcEndScores()">
           <div id="score-btns" class="score-row"></div>
         </div>
       </div>
@@ -350,8 +377,8 @@ body.playing-mode .wrap{padding-top:76px;padding-bottom:20px;}
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead><tr style="background:var(--sf2);">
         <th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--bd);font-weight:500;color:var(--tx2);">プレイヤー</th>
-        <th style="padding:6px 10px;text-align:center;border-bottom:1px solid var(--bd);font-weight:500;color:var(--tx2);">開始</th>
-        <th style="padding:6px 10px;text-align:center;border-bottom:1px solid var(--bd);font-weight:500;color:var(--tx2);">終了</th>
+        <th style="padding:6px 10px;text-align:center;border-bottom:1px solid var(--bd);font-weight:500;color:var(--tx2);">開始点数</th>
+        <th style="padding:6px 10px;text-align:center;border-bottom:1px solid var(--bd);font-weight:500;color:var(--tx2);">終了点数（自動計算）</th>
       </tr></thead>
       <tbody id="score-table-body"></tbody>
     </table>
@@ -410,10 +437,6 @@ body.playing-mode .wrap{padding-top:76px;padding-bottom:20px;}
     <div class="mgrid" id="mgrid"></div>
   </div>
   <div class="card">
-    <div class="slider-wrap">
-      <input type="range" min="0" max="100" value="0" step="1" id="step-slider" oninput="onSlider(this.value)">
-      <span class="slider-lbl" id="slider-lbl">1 / 1</span>
-    </div>
     <div class="thdr">
       <div>
         <div style="font-size:11px;color:var(--tx3);margin-bottom:2px;" id="turn-lbl"></div>
@@ -421,21 +444,21 @@ body.playing-mode .wrap{padding-top:76px;padding-bottom:20px;}
       </div>
       <div class="badge" id="turn-badge"></div>
     </div>
+    <!-- 表示タブ -->
+    <div id="view-tabs" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;overflow-x:auto;padding-bottom:2px;">
+      <button class="vtab on" onclick="setViewTab('all')" id="vtab-all">全表示</button>
+      <button class="vtab" onclick="setViewTab('east')" id="vtab-east">🀀東</button>
+      <button class="vtab" onclick="setViewTab('south')" id="vtab-south">🀁南</button>
+      <button class="vtab" onclick="setViewTab('west')" id="vtab-west">🀂西</button>
+      <button class="vtab" onclick="setViewTab('north')" id="vtab-north">🀃北</button>
+      <button class="vtab" onclick="setViewTab('hands')" id="vtab-hands">手牌のみ</button>
+    </div>
     <div class="player-col" id="player-col"></div>
-    <div class="ctrl">
-      <button onclick="stepTo(0)" id="b-first">⏮</button>
-      <button onclick="stepBack()" id="b-back">◀</button>
-      <button onclick="togglePlay()" id="b-play">▶ 再生</button>
-      <button onclick="stepFwd()" id="b-fwd">▶</button>
-      <button onclick="stepTo(steps.length-1)" id="b-last">⏭</button>
-      <span class="sinfo" id="sinfo"></span>
-    </div>
-    <div class="srow">
-      <label>速度</label>
-      <input type="range" min="1" max="5" value="3" step="1" id="speed-sl">
-      <span style="font-size:12px;color:var(--tx3);" id="speed-lbl">普通</span>
-    </div>
     <div class="pbar"><div class="pfill" id="pfill"></div></div>
+    <!-- hidden elements for JS compatibility -->
+    <input type="range" id="step-slider" style="display:none;">
+    <span id="slider-lbl" style="display:none;"></span>
+    <span id="sinfo" style="display:none;"></span>
   </div>
   <div class="card">
     <div class="slabel">イベントログ</div>
@@ -446,7 +469,8 @@ body.playing-mode .wrap{padding-top:76px;padding-bottom:20px;}
   <div class="card" style="padding:12px 16px;">
     <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
       <button onclick="generateReport()" style="background:var(--r-bg);border-color:var(--r);color:var(--r);font-size:14px;padding:10px 20px;">📄 レポートを生成</button>
-      <button onclick="saveToLocalStorage()" style="background:var(--g-bg);border-color:var(--g);color:var(--g);font-size:14px;padding:10px 20px;">💾 この結果を保存</button>
+      <button onclick="saveToLocalStorage()" style="background:var(--g-bg);border-color:var(--g);color:var(--g);font-size:14px;padding:10px 20px;">💾 ブラウザに保存</button>
+      <button onclick="exportJSON()" style="background:var(--b-bg);border-color:var(--b);color:var(--b);font-size:14px;padding:10px 20px;">📤 JSONで書き出し</button>
       <button onclick="location.reload()" style="font-size:14px;padding:10px 20px;">↩ 最初からやり直す</button>
     </div>
   </div>
@@ -951,6 +975,37 @@ function jumpToPlayer(w){
 function goFinal(){
   showPhase("ph-final");
   buildFinalInputs();
+  // 前回の局情報を復元
+  var saved=JSON.parse(localStorage.getItem('mahjong_meta')||'{}');
+  if(saved.title)document.getElementById("m-title").value=saved.title;
+  if(saved.bk)document.getElementById("m-bk").value=saved.bk;
+  if(saved.ky)document.getElementById("m-ky").value=saved.ky;
+  if(saved.ho!=null)document.getElementById("m-ho").value=saved.ho;
+  if(saved.dora)document.getElementById("m-dora").value=saved.dora;
+  // 前回の終了点数を今局の開始点数として復元
+  if(saved.endScores){
+    WE.forEach(function(w){
+      var el=document.getElementById('sc-start-'+w);
+      if(el&&saved.endScores[w]!=null)el.value=saved.endScores[w];
+    });
+    setTimeout(calcEndScores,50); // DOM再描画後に実行
+  }
+  // 次局自動設定の提案
+  var nextMeta=JSON.parse(localStorage.getItem('mahjong_next_meta')||'null');
+  var nextBanner=document.getElementById('next-game-banner');
+  if(nextBanner){
+    if(nextMeta){
+      var nextLabel=nextMeta.bk+'場'+nextMeta.ky+'局 '+nextMeta.ho+'本場';
+      nextBanner.innerHTML='<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;'
+        +'background:var(--a-bg);border:1px solid var(--a);border-radius:var(--ra);margin-bottom:10px;">'
+        +'<span style="font-size:13px;color:var(--a-t);">次局: '+nextLabel+'</span>'
+        +'<button onclick="applyNextMeta()" style="font-size:12px;padding:3px 10px;background:var(--a);border-color:var(--a);color:#fff;border-radius:var(--ra);">適用</button>'
+        +'<button onclick="clearNextBanner()" style="font-size:12px;padding:3px 8px;color:var(--tx3);">×</button>'
+        +'</div>';
+    } else {
+      nextBanner.innerHTML='';
+    }
+  }
   // 結果セレクトを初期化
   document.getElementById("res-winner").value="ryukyoku";
   onWinnerChange();
@@ -962,14 +1017,16 @@ function onWinnerChange(){
   const isRyukyoku=(w==="ryukyoku");
   document.getElementById("row-wintype").style.display=isRyukyoku?"none":"flex";
   document.getElementById("row-score").style.display=isRyukyoku?"none":"flex";
+  document.getElementById("row-tenpai").style.display=isRyukyoku?"flex":"none";
   document.getElementById("row-loser").style.display="none";
   if(!isRyukyoku){
     // 点数ボタンを描画
     document.getElementById("score-btns").innerHTML=SCORE_PRESETS.map(function(s){
-      return '<button class="score-btn" onclick="document.getElementById(\'res-score\').value=\''+s+'\'">'+s+'</button>';
+      return '<button class="score-btn" onclick="document.getElementById(\'res-score\').value=\''+s+'\';calcEndScores();">'+s+'</button>';
     }).join("");
     onWintypeChange();
   }
+  calcEndScores();
 }
 
 function onWintypeChange(){
@@ -986,6 +1043,7 @@ function onWintypeChange(){
   } else {
     loserRow.style.display="none";
   }
+  calcEndScores();
 }
 
 function updDoraPrev(){
@@ -1025,19 +1083,148 @@ var playerInputPhase={east:0,south:0,west:0,north:0};
 var manualInputAll=false;
 
 var scorePointMode=false;
+
+function clearNextBanner(){
+  var el=document.getElementById('next-game-banner');
+  if(el)el.innerHTML='';
+}
+function applyNextMeta(){
+  var nextMeta=JSON.parse(localStorage.getItem('mahjong_next_meta')||'null');
+  if(!nextMeta)return;
+  if(nextMeta.bk)document.getElementById("m-bk").value=nextMeta.bk;
+  if(nextMeta.ky)document.getElementById("m-ky").value=nextMeta.ky;
+  if(nextMeta.ho!=null)document.getElementById("m-ho").value=nextMeta.ho;
+  if(nextMeta.title)document.getElementById("m-title").value=nextMeta.title;
+  // 次局開始点数 = 前局終了点数
+  if(nextMeta.endScores){
+    WE.forEach(function(w){
+      var el=document.getElementById('sc-start-'+w);
+      if(el&&nextMeta.endScores[w]!=null)el.value=nextMeta.endScores[w];
+    });
+    calcEndScores();
+  }
+  clearNextBanner();
+}
+
+// 対局後の点数を自動計算
+function calcEndScores(){
+  var winner=document.getElementById("res-winner")?.value;
+  var wintype=document.getElementById("res-wintype")?.value||"tsumo";
+  var loser=document.getElementById("res-loser")?.value||"";
+  var scoreStr=(document.getElementById("res-score")?.value||"").trim();
+  var isPoint=document.getElementById('chk-point-mode')?.checked;
+  var honba=parseInt(document.getElementById("m-ho")?.value)||0;
+
+  // 開始点数を取得
+  var starts={};
+  WE.forEach(function(w){
+    var sv=document.getElementById("sc-start-"+w)?.value;
+    starts[w]=sv?parseFloat(sv):null;
+  });
+  if(WE.every(function(w){return starts[w]==null;})){
+    WE.forEach(function(w){
+      var el=document.getElementById("sc-end-display-"+w);
+      if(el)el.textContent="-";
+      var hidden=document.getElementById("sc-end-"+w);
+      if(hidden)hidden.value="";
+    });
+    return;
+  }
+
+  // 点数変動を計算
+  var delta={east:0,south:0,west:0,north:0};
+  var honbaBonus=honba*300;
+
+  if(winner==="ryukyoku"){
+    // 流局ノーテン罰符: テンパイ選択があれば計算
+    var tenpaiWinds=WE.filter(function(w){
+      return document.getElementById('tenpai-'+w)?.checked;
+    });
+    var nTenpai=tenpaiWinds.length;
+    if(nTenpai>0&&nTenpai<4){
+      var nNoTen=4-nTenpai;
+      var tenpaiGet=Math.round(3000/nTenpai);
+      var notenPay=Math.round(3000/nNoTen);
+      WE.forEach(function(w){
+        if(tenpaiWinds.includes(w))delta[w]+=tenpaiGet;
+        else delta[w]-=notenPay;
+      });
+    }
+  } else if(winner&&winner!=="ryukyoku"&&scoreStr){
+    // 和了点数のパース
+    var score=0;
+    var m=scoreStr.match(/^(\d+)$/);
+    if(m)score=parseInt(m[1]);
+    // ツモ/ロン
+    if(wintype==="tsumo"){
+      // ツモ: 他家が払う
+      // スコアプリセットのパターン判定
+      var allPay=scoreStr.match(/^(\d+)all$/i);
+      var splitPay=scoreStr.match(/^(\d+)-(\d+)$/);
+      if(allPay){
+        var pay=parseInt(allPay[1])+honbaBonus/3;
+        WE.forEach(function(w){if(w!==winner)delta[w]-=Math.round(pay);});
+        delta[winner]+=Math.round(pay*3);
+      } else if(splitPay){
+        // dealer/non-dealer split
+        var isDealer=(winner==="east");
+        var nonDealerPay=parseInt(splitPay[1])+(honba*100);
+        var dealerPay=parseInt(splitPay[2])+(honba*100);
+        WE.forEach(function(w){
+          if(w!==winner){
+            if(w==="east")delta[w]-=dealerPay;
+            else delta[w]-=nonDealerPay;
+          }
+        });
+        delta[winner]+=nonDealerPay*2+dealerPay+(honba*300);
+      } else if(score>0){
+        // 全員同額
+        WE.forEach(function(w){if(w!==winner)delta[w]-=(score+honbaBonus/3);});
+        delta[winner]+=score*3+honbaBonus;
+      }
+    } else {
+      // ロン
+      if(score>0&&loser){
+        delta[winner]+=score+honbaBonus;
+        delta[loser]-=(score+honbaBonus);
+      }
+    }
+  }
+
+  // 終了点数を表示
+  WE.forEach(function(w){
+    var start=starts[w];
+    var endEl=document.getElementById("sc-end-display-"+w);
+    var hidden=document.getElementById("sc-end-"+w);
+    if(start==null){
+      if(endEl)endEl.textContent="-";
+      if(hidden)hidden.value="";
+      return;
+    }
+    var end=start+delta[w]*(isPoint?1/100:1);
+    var endRounded=Math.round(end*100)/100;
+    if(endEl){
+      var diff=endRounded-start;
+      var color=diff>0?"var(--g)":diff<0?"var(--r)":"var(--tx2)";
+      endEl.innerHTML='<b style="color:'+color+';">'+
+        (isPoint?endRounded.toFixed(0):endRounded.toLocaleString())+'</b>';
+    }
+    // 実際の点数（ポイントモードなら100倍）
+    if(hidden)hidden.value=isPoint?Math.round(endRounded*100):endRounded;
+  });
+}
+
 function togglePointMode(checked){
   scorePointMode=checked;
   var hint=document.getElementById('score-mode-hint');
   if(hint)hint.textContent=checked?'ポイント入力（1ポイント刻み）':'点数入力（100点刻み）';
-  // 既存の値を変換して再描画
-  var vals={};
+  // 既存の開始値を変換して保存
+  var startVals={};
   WE.forEach(function(w){
     var s=document.getElementById('sc-start-'+w);
-    var e=document.getElementById('sc-end-'+w);
-    if(s&&s.value)vals['s-'+w]=parseFloat(s.value);
-    if(e&&e.value)vals['e-'+w]=parseFloat(e.value);
+    if(s&&s.value)startVals[w]=parseFloat(s.value);
   });
-  // テーブル再描画
+  // テーブル再描画（buildFinalInputsと同じ構造）
   var scoreBody=document.getElementById("score-table-body");
   if(scoreBody){
     scoreBody.innerHTML=WE.map(function(w){
@@ -1046,17 +1233,21 @@ function togglePointMode(checked){
       return '<tr>'
         +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);color:var(--tx2);">'+te(WJ[w])+' '+WJ[w]+'家</td>'
         +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);text-align:center;">'
-        +'<input type="number" id="sc-start-'+w+'" placeholder="'+ph+'" step="'+st+'" style="width:90px;text-align:center;"></td>'
+        +'<input type="number" id="sc-start-'+w+'" placeholder="'+ph+'" step="'+st+'" style="width:90px;text-align:center;" oninput="calcEndScores()"></td>'
         +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);text-align:center;">'
-        +'<input type="number" id="sc-end-'+w+'" placeholder="'+ph+'" step="'+st+'" style="width:90px;text-align:center;"></td>'
+        +'<span id="sc-end-display-'+w+'" style="font-size:13px;color:var(--tx2);">-</span>'
+        +'<input type="hidden" id="sc-end-'+w+'"></td>'
         +'</tr>';
     }).join("");
-    // 値を変換して戻す
+    // 開始値を変換して復元
     WE.forEach(function(w){
-      var sv=vals['s-'+w],ev=vals['e-'+w];
-      if(sv!=null){var el=document.getElementById('sc-start-'+w);if(el)el.value=checked?(sv/100).toFixed(0):sv*100;}
-      if(ev!=null){var el=document.getElementById('sc-end-'+w);if(el)el.value=checked?(ev/100).toFixed(0):ev*100;}
+      var sv=startVals[w];
+      if(sv!=null){
+        var el=document.getElementById('sc-start-'+w);
+        if(el)el.value=checked?(sv/100).toFixed(0):(sv*100);
+      }
     });
+    calcEndScores();
   }
 }
 
@@ -1070,9 +1261,10 @@ function buildFinalInputs(){
       return '<tr>'
         +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);color:var(--tx2);">'+te(WJ[w])+' '+WJ[w]+'家</td>'
         +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);text-align:center;">'
-        +'<input type="number" id="sc-start-'+w+'" placeholder="'+ph+'" step="'+st+'" style="width:90px;text-align:center;"></td>'
+        +'<input type="number" id="sc-start-'+w+'" placeholder="'+ph+'" step="'+st+'" style="width:90px;text-align:center;" oninput="calcEndScores()"></td>'
         +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);text-align:center;">'
-        +'<input type="number" id="sc-end-'+w+'" placeholder="'+ph+'" step="'+st+'" style="width:90px;text-align:center;"></td>'
+        +'<span id="sc-end-display-'+w+'" style="font-size:13px;color:var(--tx2);">-</span>'
+        +'<input type="hidden" id="sc-end-'+w+'"></td>'
         +'</tr>';
     }).join("");
   }
@@ -1132,7 +1324,7 @@ function buildOnePlayerInput(w){
     +'<h3><span style="font-size:20px;">'+te(wj)+'</span>'+wj+'家</h3>';
 
   // ── ツモ牌 + 捨て牌（常に同時表示）──
-  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">'
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;" class="tsumo-disc-grid">'
     // ツモ牌
     +'<div>'
     +'<span class="flabel">ツモ牌</span>'
@@ -1466,6 +1658,8 @@ function updMeldPrev(w){
         +'<button onclick="selectRinshanManual(\''+w+'\',\''+m.rawToken+'\')"'
         +' style="font-size:12px;padding:4px 10px;background:var(--a);border-color:var(--a);color:#fff;border-radius:6px;">決定</button>'
         +'</div>'
+        +'<div style="display:flex;justify-content:flex-end;margin-top:4px;">'
+        +'<button onclick="doRevertMeld(this)" data-w="'+w+'" data-tok="'+encodeURIComponent(m.rawToken)+'" style="font-size:11px;padding:3px 8px;color:var(--tx3);border-radius:6px;">← 戻る</button>'
         +'</div>'
         +'</div>';
 
@@ -1496,6 +1690,9 @@ function updMeldPrev(w){
         });
         html+='</div>';
       }
+      html+='<div style="display:flex;justify-content:flex-end;margin-top:4px;">'
+        +'<button onclick="doRevertMeld(this)" data-w="'+w+'" data-tok="'+encodeURIComponent(m.rawToken)+'" style="font-size:11px;padding:3px 8px;color:var(--tx3);border-radius:6px;">← 戻る</button>'
+        +'</div>';
       html+='</div>';
 
     // ── STEP4: カンドラ表示牌入力（kan/ankan で捨て牌確定後）──
@@ -1574,6 +1771,21 @@ function selectRinshanManual(w,oldTok){
   const tiles=parseTiles(input.value.trim());
   if(!tiles.length)return;
   selectRinshan(w,oldTok,tiles[0]);
+}
+
+// 副露入力を1ステップ戻す（最後に追加された>以降を削除）
+function doRevertMeld(btn){
+  revertMeldStep(btn.dataset.w, decodeURIComponent(btn.dataset.tok));
+}
+function revertMeldStep(w,rawToken){
+  var ta=document.getElementById("fd-meld-"+w);
+  if(!ta)return;
+  // rawToken の最後の > 以降を削除
+  var lastGt=rawToken.lastIndexOf('>');
+  if(lastGt<0)return; // 戻せない
+  var reverted=rawToken.slice(0,lastGt);
+  ta.value=ta.value.replace(rawToken,reverted);
+  ta.dispatchEvent(new Event("input"));
 }
 
 // 捨て牌の選択確定
@@ -1678,6 +1890,28 @@ function insertText(text){
 
 // ─── 牌譜生成 ───
 function buildFromText(){
+  // 局情報を localStorage に保存（次回復元用）
+  var metaToSave={
+    title:document.getElementById("m-title").value.trim(),
+    bk:document.getElementById("m-bk").value,
+    ky:document.getElementById("m-ky").value,
+    ho:document.getElementById("m-ho").value,
+    dora:document.getElementById("m-dora").value.trim()
+  };
+  // 終了点数を収集して次局の開始点数に
+  var endScoresForNext={};
+  WE.forEach(function(w){
+    var hidden=document.getElementById('sc-end-'+w);
+    if(hidden&&hidden.value)endScoresForNext[w]=parseFloat(hidden.value);
+  });
+  metaToSave.endScores=endScoresForNext;
+  localStorage.setItem('mahjong_meta',JSON.stringify(metaToSave));
+  // 次局の自動設定: 本場+1、局を進める候補をメモ
+  var nextHo=parseInt(metaToSave.ho)||0;
+  var nextKy=parseInt(metaToSave.ky)||1;
+  localStorage.setItem('mahjong_next_meta',JSON.stringify({
+    bk:metaToSave.bk,ky:nextKy,ho:nextHo+1,title:metaToSave.title,endScores:endScoresForNext
+  }));
   const winner=document.getElementById("res-winner").value;
   const wintype=winner==="ryukyoku"?"ryukyoku":document.getElementById("res-wintype")?.value||"tsumo";
   const loser=wintype==="ron"?(document.getElementById("res-loser")?.value||""):"";
@@ -1710,23 +1944,34 @@ function buildFromText(){
   var _pm=document.getElementById('chk-point-mode')?.checked;
   WE.forEach(function(w){
     var sv=document.getElementById("sc-start-"+w)?.value;
+    // 終了点数は hidden input から取得（自動計算済みの実際の点数）
     var ev=document.getElementById("sc-end-"+w)?.value;
     var s=sv?parseFloat(sv):null;
     var e=ev?parseFloat(ev):null;
-    // ポイントモードなら100倍して点数に変換
-    if(_pm){if(s!=null)s=Math.round(s*100);if(e!=null)e=Math.round(e*100);}
+    // ポイントモードなら開始点数のみ100倍（終了は calcEndScores で既に変換済み）
+    if(_pm&&s!=null)s=Math.round(s*100);
     playerScores[w]={start:s,end:e,pointMode:_pm?true:false};
   });
 
-  // 流局テンパイ自動判定: 終了点数が開始点数より大きいプレイヤー
+  // 流局テンパイ判定: チェックボックス優先、なければ点数増減で判定
   const tenpaiFlags={};
   if(winner==="ryukyoku"){
+    var anyChecked=['east','south','west','north'].some(function(w){
+      return document.getElementById('tenpai-'+w)?.checked;
+    });
     WE.forEach(function(w){
-      const sc=playerScores[w];
-      if(sc&&sc.start!=null&&sc.end!=null){
-        tenpaiFlags[w]=sc.end>sc.start?true:false;
+      var cb=document.getElementById('tenpai-'+w);
+      if(anyChecked){
+        // チェックボックスが使われている場合はそちらを優先
+        tenpaiFlags[w]=cb?cb.checked:false;
       } else {
-        tenpaiFlags[w]=null; // 不明
+        // チェックボックス未使用: 点数で自動判定
+        const sc=playerScores[w];
+        if(sc&&sc.start!=null&&sc.end!=null){
+          tenpaiFlags[w]=sc.end>sc.start?true:false;
+        } else {
+          tenpaiFlags[w]=null;
+        }
       }
     });
   }
@@ -1929,12 +2174,23 @@ function buildSteps(gd){
             (mel.tiles||[]).forEach(function(t,ti){if(ti!==ni)cMeldOwn.push(t);});
           }
         });
-        // 正確な手牌計算:
-        // hand = init + ツモ牌(discCount枚分) - 捨て牌 - 副露自己牌
-        // ツモ牌は tsumoArr の最初の cDiscN 個（↓はツモ切り=その前ツモ牌をそのまま捨て）
-        // ↓はtsumoArrに含まれないので cDiscN 個取ればOK
-        // ただし↓が含まれている場合は1枚として数える（tsumoArr自体に↓は入っていない場合が多い）
-        const tsumoSlice=cTsumo.slice(0,cDiscN);
+        // 手牌計算: 実ツモ数 = 捨て枚数 - ポン/チーのターン数
+        // vm[cw] には「現時点で表示すべき副露」が入っている
+        // ポン/チーの afterDiscIdx が cDiscN 以下なら「副露後捨て済み」→ そのターンはツモなし
+        var nakiTurns=0;
+        vm[cw].forEach(function(mel){
+          if(mel.type==='ankan'||mel.isAnkan)return; // 暗カンはツモあり
+          if(!mel.discTile)return;
+          var ev=meldEvents.find(function(e){return e.nakiWind===cw&&e.meld===mel;});
+          if(!ev)return;
+          var afterIdx=ev.afterDiscIdx;
+          // afterIdx が -1 なら捨て牌未特定（スキップ）
+          // afterIdx < cDiscN なら「副露後捨て牌が既に ds に入っている」→ ツモなしターン
+          // afterIdx >= cDiscN なら「副露後捨て牌はまだ出ていない」→ 現在ポン直後で捨て前
+          if(afterIdx>=0&&afterIdx<cDiscN)nakiTurns++;
+        });
+        const effectiveTsumoN=Math.max(0,cDiscN-nakiTurns);
+        const tsumoSlice=cTsumo.slice(0,effectiveTsumoN);
         const bag={};
         cInit.forEach(function(t){const n=normalTile(t);bag[n]=(bag[n]||0)+1;});
         tsumoSlice.forEach(function(t){if(t&&t!=="?"&&t!=="↓"){const n=normalTile(t);bag[n]=(bag[n]||0)+1;}});
@@ -2072,8 +2328,9 @@ function buildFloatYamaHTML(stepIdx){
 function renderPlayer(){
   renderMeta();renderLog();renderResult();renderYamaCard(0);stepTo(0);
   // メインの速度スライダー
-  document.getElementById("speed-sl").oninput=function(e){
-    document.getElementById("speed-lbl").textContent=SPDL[+e.target.value-1];
+  // speed-sl は削除済み。fc-speed のみ使用。
+  var speedSlEl=document.getElementById("speed-sl");
+  if(speedSlEl) speedSlEl.oninput=function(e){
     document.getElementById("fc-speed").value=e.target.value;
     document.getElementById("fc-speed-lbl").textContent=SPDL[+e.target.value-1];
   };
@@ -2174,7 +2431,12 @@ function renderStep(idx){
   document.getElementById("slider-lbl").textContent=(idx+1)+" / "+steps.length;
   const isLast=(idx===steps.length-1);
 
-  document.getElementById("player-col").innerHTML=WE.map(function(wind){
+  // タブフィルタ
+  var visibleWinds=WE;
+  if(currentViewTab!=='all'&&currentViewTab!=='hands'){
+    visibleWinds=WE.filter(function(w){return w===currentViewTab;});
+  }
+  document.getElementById("player-col").innerHTML=visibleWinds.map(function(wind){
     const isAct=s.active===wind;
     const isWin=s.winner===wind;
     const isLoser=isLast&&s.loser===wind;
@@ -2191,6 +2453,7 @@ function renderStep(idx){
     const nakiSet=s.nakiSets?s.nakiSets[wind]:new Set();
     const hasTsumo=tsumoH.length>0;
     const showTsumo=tsumoVisible[wind]&&hasTsumo;
+    const handsOnlyMode=(currentViewTab==='hands');
 
     // ツモ＋捨てペア列
     function tsumoDiscHTML(){
@@ -2254,6 +2517,25 @@ function renderStep(idx){
         +(showTsumo?"ツモ牌を隠す":"ツモ牌を表示")+'</button>'
       :'';
 
+    // 手牌のみモード
+    if(handsOnlyMode){
+      var tpFlagH=isLast&&s.type==="ryukyoku"?gameData.meta.tenpai?.[wind]:null;
+      var tpBadgeH=tpFlagH===true
+        ?'<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#eaf3de;color:#3b6d11;font-weight:600;">テンパイ</span>'
+        :tpFlagH===false
+        ?'<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#e0e0e0;color:#555;font-weight:600;">ノーテン</span>'
+        :'';
+      var dispH=currentH!==null?currentH:finalH;
+      return '<div class="prow'+(isWin?" win":isLoser?" ron-loser":isAct?" act":"")+'"><div class="prow-hdr">'
+        +'<span class="dot'+(isAct?" act":"")+'"></span>'
+        +'<span>'+WJ[wind]+'家'+(isWin?" 🏆":"")+'</span>'
+        +(tpBadgeH?' '+tpBadgeH:'')
+        +(pm.length?'<span class="naki-label">'+mHtml+'</span>':"")
+        +'</div><div style="padding:4px 10px;">'
+        +'<div class="tiles-line" style="font-size:24px;">'+th(dispH)+'</div>'
+        +'</div></div>';
+    }
+
     return '<div class="prow'+(isWin?" win":isLoser?" ron-loser":isAct?" act":"")+'"><div class="prow-hdr">'
       +'<span class="dot'+(isAct?" act":"")+'"></span>'
       +'<span>'+WJ[wind]+'家'+(isWin?" 🏆":"")+'</span>'
@@ -2272,18 +2554,16 @@ function renderStep(idx){
       // 右列: 現在手牌 + 副露
       +'<div>'
         +(currentH!==null
-          // リアルタイム手牌表示
           ?(function(){
             var tpFlag=isLast&&s.type==="ryukyoku"?gameData.meta.tenpai?.[wind]:null;
             var tpBadge=tpFlag===true
               ?'<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#eaf3de;color:#3b6d11;font-weight:600;margin-left:4px;">テンパイ</span>'
               :tpFlag===false
-              ?'<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#f1efe8;color:#888780;margin-left:4px;">ノーテン</span>'
+              ?'<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#ddd;color:#333;margin-left:4px;">ノーテン</span>'
               :'';
             return '<div class="section-title" style="display:flex;align-items:center;">'+(isLast?'最終手牌':'手牌')+tpBadge+'</div>'
               +'<div class="tiles-line">'+th(currentH)+'</div>';
           }())
-          // フォールバック
           :'<div class="section-title">最終手牌</div>'
            +'<div class="tiles-line '+(isLast?"":"dim")+'">'+th(finalH)+'</div>'
         )
@@ -2531,57 +2811,54 @@ function buildReportHTML(){
       +'padding-right:3px;white-space:nowrap;min-width:22px;text-align:right;'
       +'display:flex;align-items:flex-start;padding-top:0;';
 
-    // 各牌セルHTML生成: 牌絵文字＋下部バッジ
-    // 各行を「列」単位で組み立てる共通セル関数
-    // 幅を固定（CELLpx）して全行の列を揃える
-    // ── 列単位で組み立て：幅は絵文字の自然幅、列は縦 div で揃える ──
-    // 各列 = {tsumo: html, disc: html, badge, bColor}
-    // ツモ行と捨て行を同じ列 div に入れるので幅が完全に一致する
+    // ── セル関数（ラベルも含め同じ列構造にしてズレをなくす）──
 
-    // バッジ付きセル（列内の捨てセル用）
-    function discCell(emoji, badge, bColor, isTsumoCut){
-      var inner = isTsumoCut
-        ? '<span style="color:#999;font-size:'+FS+';line-height:1.1;display:block;text-align:center;">↓</span>'
-        : '<span style="font-size:'+FS+';line-height:1.1;display:block;">'+emoji+'</span>';
+    // 牌セル1個分のツモ部分（上半分）
+    // TH = ツモ行高さ = 牌絵文字の自然な高さ（line-heightで確保）
+    var TH='1.3em'; // ツモ行の高さ（ラベルと共有）
+    var BH='9px';   // バッジ行の高さ（ラベルと共有）
+    function tsumoHalf(emoji, dimmed){
+      if(emoji===null){
+        return '<div style="font-size:'+FS+';height:'+TH+';visibility:hidden;display:flex;align-items:center;justify-content:center;">•</div>';
+      }
+      return '<div style="font-size:'+FS+';height:'+TH+';display:flex;align-items:center;justify-content:center;'+(dimmed?'opacity:.35;':'')+'">'+emoji+'</div>';
+    }
+
+    // 牌セル1個分の捨て部分（下半分）+ バッジ
+    function discHalf(emoji, badge, bColor, isTsumoCut){
+      var tile = isTsumoCut
+        ? '<div style="font-size:'+FS+';height:'+TH+';display:flex;align-items:center;justify-content:center;color:#aaa;">↓</div>'
+        : '<div style="font-size:'+FS+';height:'+TH+';display:flex;align-items:center;justify-content:center;">'+emoji+'</div>';
       var bdg = badge
-        ? '<span style="font-size:7px;font-weight:700;color:'+bColor+';line-height:1;height:8px;display:block;text-align:center;white-space:nowrap;">'+badge+'</span>'
-        : '<span style="height:8px;display:block;"></span>';
-      return inner+bdg;
+        ? '<div style="font-size:7px;font-weight:700;color:'+bColor+';line-height:1;height:'+BH+';display:flex;align-items:center;justify-content:center;white-space:nowrap;">'+badge+'</div>'
+        : '<div style="height:'+BH+';"></div>';
+      return tile+bdg;
     }
 
-    // ツモセル（列内のツモ行用）
-    function tsumoCell(emoji, visible){
-      var inner = visible
-        ? '<span style="font-size:'+FS+';line-height:1.1;display:block;">'+emoji+'</span>'
-        : '<span style="font-size:'+FS+';line-height:1.1;display:block;visibility:hidden;">'+emoji+'</span>';
-      // バッジ行と高さを揃えるためのスペーサー
-      return inner+'<span style="height:8px;display:block;"></span>';
-    }
-
-    // 列 div ラッパー
-    function colDiv(tsumoHtml, discHtml){
-      return '<div style="display:inline-flex;flex-direction:column;align-items:center;vertical-align:top;">'
-        +'<div>'+tsumoHtml+'</div>'
-        +'<div>'+discHtml+'</div>'
+    // ツモ+捨てを縦積みした1列 div
+    function tdCol(tH, dH){
+      return '<div style="display:inline-flex;flex-direction:column;align-items:center;flex-shrink:0;vertical-align:top;">'
+        +tH+dH
         +'</div>';
     }
 
-    // 単純セル（初期・最終など単一行用）
+    // 単一行セル（初期・最終）
     function singleCell(emoji){
-      return '<span style="font-size:'+FS+';line-height:1.1;">'+emoji+'</span>';
+      return '<div style="display:inline-flex;flex-direction:column;align-items:center;flex-shrink:0;vertical-align:top;">'
+        +'<div style="font-size:'+FS+';height:'+TH+';display:flex;align-items:center;justify-content:center;">'+emoji+'</div>'
+        +'<div style="height:'+BH+';"></div>'
+        +'</div>';
     }
 
-    // 初期行（単純横並び）
+    // 初期行
     var initCells = ih.map(function(t){ return singleCell(te(t)); }).join('');
 
-    // ツモ+捨て：列ごとに組み立て
+    // ツモ+捨て列を構築
     var tsumoCount = 0;
     var tsumoDiscCols = '';
 
     disc.forEach(function(d, i){
       var t = tsumoArr[i] || null;
-      // ツモ切り判定: ツモ牌と捨て牌が同じ牌（自動検出）
-      // ↓は入力されなくなったので完全に自動判定
       var isTsumoCut = (t && t !== '?' && normalTile(t) === normalTile(d));
 
       // バッジ判定
@@ -2598,87 +2875,93 @@ function buildReportHTML(){
         }
       }
 
-      // 嶺上牌列（捨て行に ^ 付き牌、ツモ行は invisible で幅確保）
+      // 嶺上牌列
       if(nkInfo && nkInfo.rinshan){
         var rinshanEmoji = '<span style="position:relative;display:inline-block;">'
           +te(nkInfo.rinshan)
           +'<span style="position:absolute;top:-2px;left:50%;transform:translateX(-50%);font-size:7px;font-weight:700;color:#0f6e56;line-height:1;">^</span>'
           +'</span>';
-        tsumoDiscCols += colDiv(
-          tsumoCell(te(nkInfo.rinshan), false),
-          discCell(rinshanEmoji, '', '', false)
+        tsumoDiscCols += tdCol(
+          tsumoHalf(null, false),
+          discHalf(rinshanEmoji, '', '', false)
         );
       }
 
-      // ツモセル
+      // ツモ部分
       var tH;
       if(isTsumoCut){
-        // ツモ切り: ツモ牌をそのまま薄く表示（視覚的に「即捨て」を示す）
-        tH = '<span style="font-size:'+FS+';line-height:1.1;display:block;opacity:.35;">'+te(t)+'</span>'
-           + '<span style="height:8px;display:block;"></span>';
+        tH = tsumoHalf(te(t), true);
         tsumoCount++;
       } else if(t && t !== '?'){
-        tH = tsumoCell(te(t), true);
+        tH = tsumoHalf(te(t), false);
         tsumoCount++;
       } else {
-        // tsumoArr に対応するツモ牌がない（入力なし）→ 空セル
-        tH = '<span style="font-size:'+FS+';line-height:1.1;display:block;visibility:hidden;">•</span>'
-           + '<span style="height:8px;display:block;"></span>';
+        tH = tsumoHalf(null, false);
       }
 
-      // 捨てセル
-      var dH = discCell(te(d), badge, bColor, isTsumoCut);
-
-      tsumoDiscCols += colDiv(tH, dH);
+      // 捨て部分
+      var dH = discHalf(te(d), badge, bColor, isTsumoCut);
+      tsumoDiscCols += tdCol(tH, dH);
     });
 
-    // 末尾ツモ未捨て分
+    // 末尾ツモ未捨て
     for(var ti2 = disc.length; ti2 < tsumoArr.length; ti2++){
       var t2 = tsumoArr[ti2];
-      if(t2 && t2 !== '↓' && t2 !== '?'){
-        tsumoDiscCols += colDiv(
-          tsumoCell(te(t2), true),
-          discCell('<span style="visibility:hidden;">'+te(t2)+'</span>', '', '', false)
-        );
+      if(t2 && t2 !== '?'){
+        tsumoDiscCols += tdCol(tsumoHalf(te(t2), false), discHalf('', '', '', false));
         tsumoCount++;
       }
     }
 
-    // 最終手牌行（単純横並び）
+    // 最終行
     var finalCells = fh.map(function(t){ return singleCell(te(t)); }).join('');
 
-
-    // 行を組み立てる関数
-    function rowHtml(label, cells, countSuffix){
+    // rowHtml: ラベル + 単一行（初期・最終）
+    function rowHtml(label, cells, suffix){
       return '<div style="display:flex;align-items:flex-start;margin-bottom:1px;">'
-        +'<div style="'+lblStyle+'">'+label+'</div>'
-        +'<div style="display:inline-flex;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;flex:1;'
-        +'align-items:flex-start;white-space:nowrap;letter-spacing:0;word-spacing:0;font-size:0;">'+cells
-        +(countSuffix?'<span style="font-size:8px;color:#aaa;white-space:nowrap;line-height:1;padding-left:3px;align-self:flex-start;padding-top:1px;">'+countSuffix+'</span>':'')
+        // ラベルセル: singleCell の高さに合わせる
+        +'<div style="font-size:9px;color:#555;font-weight:600;min-width:22px;flex-shrink:0;'
+        +'text-align:right;padding-right:3px;display:flex;align-items:flex-start;padding-top:1px;">'
+        +label+'</div>'
+        +'<div style="display:inline-flex;flex-wrap:nowrap;overflow-x:auto;flex:1;'
+        +'align-items:flex-start;font-size:0;white-space:nowrap;">'+cells
+        +(suffix?'<span style="font-size:8px;color:#aaa;white-space:nowrap;padding-left:3px;padding-top:2px;">'+suffix+'</span>':'')
         +'</div></div>';
     }
-    // ツモ+捨て 2行まとめて表示する関数
-    function tsumoDiscRow(label1, label2, cols, tsumoSuffix, discSuffix){
+
+    // tsumoDiscRow: ラベル列も同じ縦積み構造にして高さを完全一致させる
+    function tsumoDiscRow(cols, tsumoSuffix, discSuffix){
+      // ラベル列 = tdCol と同じ構造で「ツモ」「捨て+バッジ」を縦積み
+      var labelTsumo = '<div style="font-size:9px;color:#555;font-weight:600;'
+        +'display:flex;align-items:center;height:'+TH+';'
+        +'text-align:right;padding-right:3px;white-space:nowrap;justify-content:flex-end;">ツモ</div>';
+      var labelDisc  = '<div style="font-size:9px;color:#555;font-weight:600;'
+        +'display:flex;align-items:center;height:calc('+TH+' + '+BH+');'
+        +'text-align:right;padding-right:3px;white-space:nowrap;justify-content:flex-end;">捨て</div>';
+      var labelCol = '<div style="display:inline-flex;flex-direction:column;align-items:flex-end;'
+        +'flex-shrink:0;min-width:22px;vertical-align:top;">'+labelTsumo+labelDisc+'</div>';
+
+      // 枚数表示列
+      var suffixCol = (tsumoSuffix||discSuffix)
+        ? '<div style="display:inline-flex;flex-direction:column;align-items:flex-start;'
+          +'flex-shrink:0;padding-left:3px;vertical-align:top;">'
+          +'<div style="font-size:8px;color:#aaa;white-space:nowrap;line-height:1.15;">'+(tsumoSuffix||'')+'</div>'
+          +'<div style="font-size:8px;color:#aaa;white-space:nowrap;line-height:1.15;">'+(discSuffix||'')+'</div>'
+          +'<div style="height:9px;"></div>'
+          +'</div>'
+        : '';
+
       return '<div style="display:flex;align-items:flex-start;margin-bottom:1px;">'
-        +'<div style="display:flex;flex-direction:column;'+lblStyle+';">'
-          +'<span>'+label1+'</span>'
-          +'<span>'+label2+'</span>'
-        +'</div>'
-        +'<div style="display:inline-flex;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;flex:1;'
-        +'align-items:flex-start;white-space:nowrap;letter-spacing:0;word-spacing:0;font-size:0;">'
-        +cols
-        +(tsumoSuffix||discSuffix
-          ?'<div style="display:inline-flex;flex-direction:column;align-self:flex-start;padding-left:3px;">'
-            +(tsumoSuffix?'<span style="font-size:8px;color:#aaa;white-space:nowrap;">'+tsumoSuffix+'</span>':'<span style="height:8px;display:block;"></span>')
-            +(discSuffix?'<span style="font-size:8px;color:#aaa;white-space:nowrap;">'+discSuffix+'</span>':'<span style="height:8px;display:block;"></span>')
-            +'</div>'
-          :'')
+        +labelCol
+        +'<div style="display:inline-flex;flex-wrap:nowrap;overflow-x:auto;flex:1;'
+        +'align-items:flex-start;font-size:0;white-space:nowrap;">'
+        +cols+suffixCol
         +'</div></div>';
     }
 
     var tenpaiFlag=m.result_type==='ryukyoku'&&gameData.meta.tenpai?gameData.meta.tenpai[w]:null;
     var tenpaiStr=tenpaiFlag===true?' <span style="font-size:10px;padding:1px 6px;border-radius:10px;background:#eaf3de;color:#3b6d11;">テンパイ</span>'
-      :tenpaiFlag===false?' <span style="font-size:10px;padding:1px 6px;border-radius:10px;background:#f1f1f1;color:#888;">ノーテン</span>'
+      :tenpaiFlag===false?' <span style="font-size:10px;padding:1px 6px;border-radius:10px;background:#e0e0e0;color:#444;font-weight:600;">ノーテン</span>'
       :'';
 
     var sc2=ps2[w]||{};
@@ -2700,8 +2983,7 @@ function buildReportHTML(){
       +scoreCell+'</div>'
       +rowHtml('初期', initCells, '')
       +(tsumoArr.length&&disc.length
-        ?tsumoDiscRow('ツモ','捨て',tsumoDiscCols,
-            '（'+tsumoCount+'枚）','（'+disc.length+'枚）')
+        ?tsumoDiscRow(tsumoDiscCols,'（'+tsumoCount+'枚）','（'+disc.length+'枚）')
         :tsumoArr.length
         ?rowHtml('ツモ',tsumoDiscCols,'（'+tsumoCount+'枚）')
         :rowHtml('捨て',tsumoDiscCols,'（'+disc.length+'枚）')
@@ -2786,6 +3068,43 @@ function downloadReport(){
 // ─── localStorage 保存・復元 ───
 const LS_KEY="mahjong_saved_game";
 
+function exportJSON(){
+  if(!gameData)return;
+  var obj={gameData:gameData,steps_meta:{count:steps.length},savedAt:new Date().toISOString()};
+  var blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;
+  var title=(gameData.meta.title||gameData.meta.bakaze+'風'+gameData.meta.kyoku+'局').replace(/[/\:*?"<>|]/g,'_');
+  a.download='mahjong_'+title+'.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importJSON(input){
+  var file=input.files[0];
+  if(!file)return;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      var obj=JSON.parse(e.target.result);
+      if(!obj.gameData){alert('JSONの形式が正しくありません');return;}
+      gameData=obj.gameData;
+      steps=buildSteps(gameData);
+      document.getElementById("step-slider").max=steps.length-1;
+      tsumoVisible={east:false,south:false,west:false,north:false};
+      showPhase("ph-player");
+      renderPlayer();
+      window.scrollTo({top:0,behavior:"smooth"});
+      alert('読み込み完了: '+(gameData.meta.title||gameData.meta.bakaze+'風'+gameData.meta.kyoku+'局'));
+    }catch(err){
+      alert('読み込みエラー: '+err.message);
+    }
+    input.value='';
+  };
+  reader.readAsText(file);
+}
+
 function saveToLocalStorage(){
   if(!gameData)return;
   const save={gameData,steps,savedAt:new Date().toLocaleString("ja-JP")};
@@ -2845,13 +3164,24 @@ function setPlayBtns(playing){
     if(el)el.textContent=playing?"⏸ 停止":"▶ 再生";
   });
 }
+// 表示タブ
+var currentViewTab='all';
+function setViewTab(tab){
+  currentViewTab=tab;
+  document.querySelectorAll('.vtab').forEach(function(el){el.classList.remove('on');});
+  var el=document.getElementById('vtab-'+tab);
+  if(el)el.classList.add('on');
+  renderStep(cur);
+}
+
 function togglePlay(){
   if(timer){
     clearInterval(timer);timer=null;
     setPlayBtns(false);
   } else {
     if(cur>=steps.length-1)stepTo(0);
-    const ms=SPD[+document.getElementById("speed-sl").value-1];
+    const speedEl=document.getElementById("fc-speed")||document.getElementById("speed-sl");
+    const ms=SPD[speedEl?Math.max(0,Math.min(4,+speedEl.value-1)):2];
     setPlayBtns(true);
     timer=setInterval(function(){
       if(cur>=steps.length-1){clearInterval(timer);timer=null;setPlayBtns(false);}
