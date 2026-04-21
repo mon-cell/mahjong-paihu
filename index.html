@@ -285,9 +285,15 @@ body.playing-mode .wrap{padding-top:76px;padding-bottom:20px;}
   <!-- 局情報 -->
   <div class="card">
     <div class="slabel">局情報</div>
-    <div style="margin-bottom:10px;">
-      <label style="font-size:13px;color:var(--tx2);display:block;margin-bottom:3px;">タイトル（任意）</label>
-      <input type="text" id="m-title" placeholder="例: 2025年4月 東1局">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div>
+        <label style="font-size:13px;color:var(--tx2);display:block;margin-bottom:3px;">タイトル（任意）</label>
+        <input type="text" id="m-title" placeholder="例: 2025年4月 東1局">
+      </div>
+      <div>
+        <label style="font-size:13px;color:var(--tx2);display:block;margin-bottom:3px;">対局日付</label>
+        <input type="date" id="m-date" style="width:100%;">
+      </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
       <label style="font-size:13px;color:var(--tx2);">場風
@@ -400,7 +406,7 @@ body.playing-mode .wrap{padding-top:76px;padding-bottom:20px;}
 
 <!-- ③ 再生 -->
 <div id="ph-player">
-  <button class="back-btn" onclick="backToFinal()">← ② 終局データ入力に戻る</button>
+  <button class="back-btn" onclick="backToFinal()">← ② データを修正する / 入力に戻る</button>
   <!-- フローティングコントロール（再生時に表示） -->
   <div id="float-ctrl">
     <div class="fc-row1">
@@ -577,9 +583,24 @@ function meldHTML(melds){
   if(!melds||!melds.length)return "";
   return melds.map(function(m){
     const lbl={pon:"ポン",chi:"チー",kan:"カン",ankan:"暗カン"}[m.type]||m.type;
-    // カン牌列
-    const tilesPart=(m.tiles||[]).map(te).join("");
-    // 嶺上牌: 矢印の後に ^ マーク付きで表示
+    const nakiIdx=(m.type==="ankan"||m.isAnkan)?-1:(m.nakiIdxFixed!==null?m.nakiIdxFixed:0);
+    // 鳴き元方向ラベル
+    var fromLabel="";
+    if(m.type!=="ankan"&&!m.isAnkan&&m.nakiIdxFixed!=null){
+      var fromMap={0:"上",1:"対",2:"下"};
+      var fromStr=fromMap[m.nakiIdxFixed]||"";
+      if(fromStr)fromLabel='<span style="font-size:9px;color:var(--a-t);font-weight:700;margin-right:1px;">'+fromStr+'</span>';
+    }
+    // 牌列（nakiIdxの牌をハイライト）
+    const tilesPart=(m.tiles||[]).map(function(t,ti){
+      const e=te(t);
+      if(ti===nakiIdx&&nakiIdx>=0){
+        return '<span style="display:inline-block;background:var(--a-bg);border:1.5px solid var(--a);border-radius:3px;line-height:1;">'
+          +e+'</span>';
+      }
+      return e;
+    }).join("");
+    // 嶺上牌
     const rinshanPart=m.rinshanTile
       ?'<span style="font-size:13px;opacity:.7;margin:0 1px;">→</span>'
         +'<span style="position:relative;display:inline-block;vertical-align:bottom;">'
@@ -591,15 +612,15 @@ function meldHTML(melds){
     const discPart=m.discTile
       ?'<span style="font-size:13px;opacity:.7;margin:0 1px;">→</span>'+te(m.discTile)
       :'';
-    // カンドラ表示牌
+    // カンドラ
     const kanDoraPart=m.kanDoraTile
       ?'<span style="font-size:11px;color:var(--tx3);margin-left:5px;white-space:nowrap;">'
-        +'カンドラ表示:'+te(m.kanDoraTile)
+        +'カンドラ:'+te(m.kanDoraTile)
         +'<span style="font-size:10px;color:var(--tx3);">→'+te(doraFromIndicator(m.kanDoraTile))+'</span>'
         +'</span>'
       :'';
     return '<span class="meld-group" title="'+lbl+'">'
-      +tilesPart+rinshanPart+discPart
+      +fromLabel+tilesPart+rinshanPart+discPart
       +'</span>'+kanDoraPart;
   }).join(" ");
 }
@@ -795,7 +816,114 @@ function showPhase(id){
 function backToInput(){showPhase("ph-input");window.scrollTo({top:0,behavior:"smooth"});}
 function backToFinal(){
   if(timer){clearInterval(timer);timer=null;}
-  showPhase("ph-final");window.scrollTo({top:0,behavior:"smooth"});
+  showPhase("ph-final");
+  // gameDataがあれば入力欄に値を復元
+  if(gameData){
+    restoreFormFromGameData();
+  }
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+function restoreFormFromGameData(){
+  if(!gameData)return;
+  const m=gameData.meta;
+  // 局情報
+  if(m.title!=null)document.getElementById("m-title").value=m.title||"";
+  if(m.date&&document.getElementById("m-date"))document.getElementById("m-date").value=m.date;
+  if(m.bakaze)document.getElementById("m-bk").value=m.bakaze;
+  if(m.kyoku)document.getElementById("m-ky").value=m.kyoku;
+  if(m.honba!=null)document.getElementById("m-ho").value=m.honba;
+  // ドラ
+  var doraInds=m.dora_indicators||[];
+  var doraStr=doraInds.join(" ");
+  document.getElementById("m-dora").value=doraStr;
+  var uraInds=m.ura_dora_indicators||[];
+  if(document.getElementById("m-ura-dora"))document.getElementById("m-ura-dora").value=uraInds.join(" ");
+  updDoraPrev();
+  // 結果
+  var winner=m.winner||"ryukyoku";
+  document.getElementById("res-winner").value=winner;
+  onWinnerChange();
+  if(winner!=="ryukyoku"){
+    document.getElementById("res-wintype").value=m.result_type||"tsumo";
+    onWintypeChange();
+    if(m.result_type==="ron"&&m.loser)document.getElementById("res-loser").value=m.loser;
+    document.getElementById("res-score").value=m.score||"";
+  } else {
+    // テンパイチェック復元
+    if(m.tenpai){
+      WE.forEach(function(w){
+        var cb=document.getElementById('tenpai-'+w);
+        if(cb)cb.checked=m.tenpai[w]===true;
+      });
+    }
+  }
+  calcEndScores();
+  // 点数
+  var ps=gameData.playerScores||{};
+  WE.forEach(function(w){
+    var sc=ps[w]||{};
+    var startEl=document.getElementById("sc-start-"+w);
+    if(startEl&&sc.start!=null)startEl.value=sc.start;
+  });
+  calcEndScores();
+  // 各プレイヤーデータを復元（buildFinalInputsが呼ばれた後）
+  // データがあるプレイヤーはphase=1（最終手牌・副露欄を表示）
+  WE.forEach(function(w){
+    var hand=gameData.players[w]?.hand||[];
+    var melds=gameData.players[w]?.melds||[];
+    if(hand.length||melds.length)playerInputPhase[w]=1;
+  });
+  buildFinalInputs();
+  setTimeout(function(){
+    WE.forEach(function(w){
+      var disc=gameData.discards[w]||[];
+      var hand=gameData.players[w]?.hand||[];
+      var melds=gameData.players[w]?.melds||[];
+      var tsumo=gameData.players[w]?.tsumo||[];
+      var riichiIdx=gameData.players[w]?.riichiIdx??-1;
+      // 捨て牌
+      var discEl=document.getElementById("fd-disc-"+w);
+      if(discEl)discEl.value=disc.join(" ");
+      // 最終手牌
+      var handEl=document.getElementById("fd-hand-"+w);
+      if(handEl)handEl.value=hand.join(" ");
+      // 副露: rawTokenが残っていればそれを使う
+      var meldEl=document.getElementById("fd-meld-"+w);
+      if(meldEl){
+        var meldStr=melds.map(function(m){return m.rawToken||meldToToken(m);}).join(" ");
+        meldEl.value=meldStr;
+      }
+      // ツモ
+      var tsumoEl=document.getElementById("fd-tsumo-"+w);
+      if(tsumoEl)tsumoEl.value=tsumo.join(" ");
+      // リーチ
+      var riichiEl=document.getElementById("fd-riichi-"+w);
+      if(riichiEl&&riichiIdx>=0)riichiEl.value=riichiIdx;
+      // プレビュー更新
+      updMeldPrev(w);
+    });
+    // 点数も再設定
+    var ps2=gameData.playerScores||{};
+    WE.forEach(function(w){
+      var sc2=ps2[w]||{};
+      var startEl=document.getElementById("sc-start-"+w);
+      if(startEl&&sc2.start!=null)startEl.value=sc2.start;
+    });
+    calcEndScores();
+  },50);
+}
+
+// meldオブジェクトからトークン文字列を復元
+function meldToToken(m){
+  if(!m)return "";
+  var type=m.type||"pon";
+  var tiles=(m.tiles||[]).join("");
+  var at=m.isAnkan?"@ankan":(m.nakiIdxFixed!=null?"@"+m.nakiIdxFixed:"");
+  var rinshan=m.rinshanTile?">"+m.rinshanTile:"";
+  var disc=m.discTile?">"+m.discTile:"";
+  var kandora=(m.kanDoraTile?">"+m.kanDoraTile:(m.kanDoraSkipped?">-":""));
+  return type+":"+tiles+at+rinshan+disc+kandora;
 }
 
 // ─── ① 初期手牌入力 ───
@@ -978,6 +1106,12 @@ function goFinal(){
   // 前回の局情報を復元
   var saved=JSON.parse(localStorage.getItem('mahjong_meta')||'{}');
   if(saved.title)document.getElementById("m-title").value=saved.title;
+  if(saved.date&&document.getElementById("m-date"))document.getElementById("m-date").value=saved.date;
+  else if(document.getElementById("m-date")&&!document.getElementById("m-date").value){
+    // 日付が空なら今日の日付をデフォルト
+    var today=new Date().toISOString().slice(0,10);
+    document.getElementById("m-date").value=today;
+  }
   if(saved.bk)document.getElementById("m-bk").value=saved.bk;
   if(saved.ky)document.getElementById("m-ky").value=saved.ky;
   if(saved.ho!=null)document.getElementById("m-ho").value=saved.ho;
@@ -1893,6 +2027,7 @@ function buildFromText(){
   // 局情報を localStorage に保存（次回復元用）
   var metaToSave={
     title:document.getElementById("m-title").value.trim(),
+    date:document.getElementById("m-date")?.value||"",
     bk:document.getElementById("m-bk").value,
     ky:document.getElementById("m-ky").value,
     ho:document.getElementById("m-ho").value,
@@ -1918,6 +2053,7 @@ function buildFromText(){
   const resultScore=(document.getElementById("res-score")?.value||"").trim();
   const mi={
     title:document.getElementById("m-title").value.trim(),
+    date:document.getElementById("m-date")?.value||"",
     bk:document.getElementById("m-bk").value,
     ky:document.getElementById("m-ky").value,
     ho:document.getElementById("m-ho").value,
@@ -1977,7 +2113,7 @@ function buildFromText(){
   }
   gameData={
     meta:{
-      title:mi.title,bakaze:mi.bk,kyoku:parseInt(mi.ky),honba:parseInt(mi.ho),
+      title:mi.title,date:mi.date,bakaze:mi.bk,kyoku:parseInt(mi.ky),honba:parseInt(mi.ho),
       dora_indicators:doraVal.length?doraVal:null,
       dora_indicator:doraVal.length?doraVal[0]:null,
       ura_dora_indicators:uraDoraVal.length?uraDoraVal:null,
@@ -2023,8 +2159,28 @@ function buildSteps(gd){
     const melds=allMelds[nakiWind]?.melds||[];
     melds.forEach(function(meld,mi){
       if(meld.type==="ankan"||meld.isAnkan){
-        // 暗カン: 捨て牌との対応なし。表示タイミングは最後
-        meldEvents.push({nakiWind,meld,discWind:null,discIdx:-1,meldRank:1000+mi});
+        // 暗カン: 副露後の捨て牌インデックス(afterDiscIdx)を特定する
+        // 表示タイミング = afterDiscIdx の捨て牌が出る直前
+        //   → "afterDiscIdx - 1" の捨て牌処理後、または afterDiscIdx===0 なら配牌後
+        let ankAnAfterIdx=-1;
+        if(meld.discTile){
+          const ownDisc=allDisc[nakiWind]||[];
+          for(let i=0;i<ownDisc.length;i++){
+            if(ownDisc[i]===meld.discTile){ankAnAfterIdx=i;break;}
+          }
+        }
+        // showIdx: この捨て牌ステップの「後」に暗カンを表示する
+        // afterDiscIdx が 0 なら「配牌直後」= showIdx = -1（初期ステップで表示）
+        // afterDiscIdx が N なら showIdx = N-1（N-1番目捨て牌の後に表示）
+        const showIdx = ankAnAfterIdx > 0 ? ankAnAfterIdx - 1 : -1;
+        meldEvents.push({nakiWind,meld,
+          discWind: null,  // 他家捨て牌との対応なし（表示トリガーには使わない）
+          discIdx: -1,
+          afterDiscWind: nakiWind,
+          afterDiscIdx: ankAnAfterIdx,
+          ankanShowIdx: showIdx,  // この捨て牌(自風)処理後に副露表示
+          isAnkanEvent: true,
+          meldRank: ankAnAfterIdx >= 0 ? ankAnAfterIdx - 0.5 : 1000+mi});
         return;
       }
       if(!meld.discTile){
@@ -2138,16 +2294,34 @@ function buildSteps(gd){
       ds[wind]=[...ds[wind],d];
 
       // 副露の表示タイミング:
-      // 「鳴かれた側の捨て牌ステップ」で立てる（既存）
-      // これにより、鳴いた牌が相手の捨て牌に表示された後に副露パネルが出る
+      // pon/chi/大明槓: 「鳴かれた側の捨て牌ステップ」後に表示
+      // 暗カン: 「afterDiscIdx-1 番目の自風捨て牌ステップ」後に表示
+      //   (= 4枚目をツモして暗カン宣言→嶺上ツモ→捨て牌 の直前タイミング)
       shownMeldFlags.forEach(function(_,ei){
         const ev=meldEvents[ei];
-        if(!shownMeldFlags[ei]&&ev.discWind===wind&&ev.discIdx===i){
-          shownMeldFlags[ei]=true;
-        }
-        // afterDiscIdx のステップでも念のため確認
-        if(!shownMeldFlags[ei]&&ev.afterDiscWind===wind&&ev.afterDiscIdx===i&&ev.afterDiscIdx>=0){
-          shownMeldFlags[ei]=true;
+        if(shownMeldFlags[ei])return;
+        if(ev.isAnkanEvent){
+          // 暗カン: ankanShowIdx === -1 なら初期ステップ後（ここでは最初の捨て牌前に表示）
+          // ankanShowIdx >= 0 なら「その捨て牌が自風から出た後」に表示
+          if(ev.ankanShowIdx === -1){
+            // afterDiscIdx===0 の場合: 最初の捨て牌（index=0）処理後に表示
+            if(ev.afterDiscWind===wind && i===0){
+              shownMeldFlags[ei]=true;
+            }
+          } else if(ev.ankanShowIdx >= 0){
+            if(ev.afterDiscWind===wind && i===ev.ankanShowIdx){
+              shownMeldFlags[ei]=true;
+            }
+          }
+        } else {
+          // pon/chi/大明槓: 鳴かれた捨て牌のステップで表示
+          if(ev.discWind===wind && ev.discIdx===i){
+            shownMeldFlags[ei]=true;
+          }
+          // afterDiscIdx のステップでも念のため確認（fallback）
+          if(!shownMeldFlags[ei] && ev.afterDiscWind===wind && ev.afterDiscIdx===i && ev.afterDiscIdx>=0){
+            shownMeldFlags[ei]=true;
+          }
         }
       });
 
@@ -2280,15 +2454,16 @@ function buildFloatYamaHTML(stepIdx){
   if(stepIdx!==undefined&&steps&&steps[stepIdx]){
     var s2=steps[stepIdx];
     var totalDiscs=WE.reduce(function(acc,w){return acc+(s2.discards[w]||[]).length;},0);
-    var nakiCount=0,kanCount=0;
+    var nakiCount=0;
     WE.forEach(function(w){
       var vm=s2.visibleMelds?s2.visibleMelds[w]:[];
       (vm||[]).forEach(function(m){
-        if(m.type!=="ankan"&&!m.isAnkan)nakiCount++;
-        if(m.type==="kan"||m.type==="ankan"||m.isAnkan)kanCount++;
+        if(m.type==='pon'||m.type==='chi')nakiCount++;
+        // 大明槓(kan): 鳴きターンなし＋嶺上ツモでネット0 → カウントしない
+        // 暗カン(ankan): 通常ツモ後の追加嶺上、1捨て牌=1ツモの対応は維持 → カウントしない
       });
     });
-    // カンはツモ山末尾→王牌補充のためネット0。ポン/チーのみ引く
+    // 総ツモ数 = 捨て牌総数 - pon/chiターン数のみ
     correctTotal=84-(totalDiscs-nakiCount);
     if(correctTotal<14&&steps[stepIdx]&&steps[stepIdx].type!=="agari")correctTotal=14;
     if(correctTotal<0)correctTotal=0;
@@ -2713,20 +2888,22 @@ function buildYamaHTML(forPrint,stepIdx){
   if(stepIdx!==undefined&&steps&&steps[stepIdx]){
     var s2=steps[stepIdx];
     var totalDiscs=WE.reduce(function(acc,w){return acc+(s2.discards[w]||[]).length;},0);
-    var nakiCount=0,kanCount=0;
+    // 実ツモ数の計算:
+    // 1捨て牌 = 1ツモ（基本）
+    // ポン/チー: その巡は鳴いた側がツモしない → 全体ツモ数 -1
+    // 大明槓: 鳴き（ツモなし）だが嶋上ツモ1回あり → ネット0（nakiCountに含めるが嶋上ツモで相殺）
+    // 暗カン: 通常ツモ後にカン宣言＋嶋上ツモ → 捨て牌1増・ツモ1増で1:1対応、山への影響は通常ツモと同じ
+    // → 実ツモ数 = totalDiscs - (ponChiCount) のみ
+    // 大明槓/暗カンはどちらも captures に含めず（それぞれ相殺）
+    var ponChiCount=0;
     WE.forEach(function(w){
       var vm=s2.visibleMelds?s2.visibleMelds[w]:[];
       vm.forEach(function(m){
-        if(m.type!=="ankan"&&!m.isAnkan)nakiCount++;
-        if(m.type==="kan"||m.type==="ankan"||m.isAnkan)kanCount++;
+        if(m.type==='pon'||m.type==='chi')ponChiCount++;
       });
     });
-    // 実際のツモ数 = 捨て牌総数 - 鳴きターン数(ポン/チー/通常カン) + カン嶺上数
-    // 鳴き発生時: 鳴いたプレイヤーはそのターンツモしない代わりに他家牌をもらう
-    // 残り = 84 - ツモ数
-    // = 84 - (totalDiscs - nakiCount + kanCount)
-    // カンはツモ山末尾→王牌補充のためネット0。ポン/チーのみ引く
-    var draws=totalDiscs-nakiCount;
+    // 総ツモ数 = 捨て牌総数 - pon/chiターン数
+    var draws=totalDiscs-ponChiCount;
     correctTotal=84-draws;
     if(correctTotal<14&&s2.type!=="agari")correctTotal=14; // 流局時は最低14枚(王牌)
     if(correctTotal<0)correctTotal=0;
@@ -3005,7 +3182,7 @@ function buildReportHTML(){
   return '<div id="report-inner" style="background:#fff;color:#1a1a18;padding:10px 14px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:720px;margin:0 auto;">'
     +'<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:3px;">'
     +'<h2 style="font-size:13px;margin:0;color:#555;">🀄︎ 麻雀牌譜レポート</h2>'
-    +'<span style="font-size:10px;color:#aaa;">'+new Date().toLocaleString("ja-JP")+'</span>'
+    +'<span style="font-size:10px;color:#aaa;">'+(m.date?m.date.replace(/-/g,'/'):(new Date().toLocaleDateString("ja-JP")))+'</span>'
     +'</div>'
     +'<div style="font-size:16px;font-weight:700;margin-bottom:5px;">'+title+'</div>'
     +'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:6px;font-size:11px;padding:5px 8px;background:#f5f5f3;border-radius:5px;">'
@@ -3107,7 +3284,7 @@ function importJSON(input){
 
 function saveToLocalStorage(){
   if(!gameData)return;
-  const save={gameData,steps,savedAt:new Date().toLocaleString("ja-JP")};
+  const save={gameData:gameData,savedAt:new Date().toLocaleString("ja-JP")};
   localStorage.setItem(LS_KEY,JSON.stringify(save));
   alert("保存しました（"+save.savedAt+"）");
 }
@@ -3118,7 +3295,7 @@ function loadFromLocalStorage(){
   try{
     const save=JSON.parse(raw);
     gameData=save.gameData;
-    steps=save.steps||buildSteps(gameData);
+    steps=buildSteps(gameData);
     document.getElementById("step-slider").max=steps.length-1;
     showPhase("ph-player");
     renderPlayer();
