@@ -226,6 +226,17 @@ body.playing-mode .wrap{padding-top:76px;padding-bottom:20px;}
   cursor:pointer;align-items:center;justify-content:center;
   padding:0;-webkit-tap-highlight-color:transparent;
 }
+/* フローティング牌キーボード（入力画面用） */
+#float-kbd{
+  display:none;position:fixed;bottom:0;left:0;right:0;z-index:300;
+  background:var(--sf);border-top:1.5px solid var(--bd2);
+  box-shadow:0 -4px 20px rgba(0,0,0,.15);
+  padding:6px 8px env(safe-area-inset-bottom,8px);
+}
+#float-kbd .fk-header{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
+#float-kbd .fk-target-label{font-size:11px;color:var(--b-t);font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#float-kbd .fk-close{font-size:13px;color:var(--tx3);padding:2px 8px;border-radius:var(--ra);cursor:pointer;background:var(--sf2);border:.5px solid var(--bd2);}
+body.kbd-open #ph-final{padding-bottom:175px;}
 @media print{
   body>*{display:none!important}
   #print-frame{display:block!important;position:static!important;inset:auto!important;width:100%!important;background:#fff!important;z-index:auto!important;padding:0!important;overflow:visible!important;}
@@ -255,6 +266,25 @@ body.playing-mode .wrap{padding-top:76px;padding-bottom:20px;}
     📥 JSONを読み込む
     <input type="file" accept=".json" style="display:none;" onchange="importJSON(this)">
   </label>
+  <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;padding:7px 14px;background:var(--sf);border:.5px solid var(--bd2);border-radius:var(--ra);font-size:13px;">
+    🔍 複数JSON検索
+    <input type="file" accept=".json" multiple style="display:none;" onchange="importMultipleJSON(this)">
+  </label>
+</div>
+<!-- JSON複数ファイル検索パネル -->
+<div id="search-panel" style="display:none;margin-bottom:12px;">
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+      <div class="slabel" style="margin:0;">🔍 牌譜検索</div>
+      <span id="search-count" style="font-size:12px;color:var(--tx3);"></span>
+      <button onclick="clearSearchPanel()" style="margin-left:auto;font-size:12px;color:var(--tx3);padding:4px 10px;">× 閉じる</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:8px;">
+      <input type="text" id="search-input" placeholder="タイトル・プレイヤー名・ID・大会名で検索…" style="flex:1;font-size:13px;" oninput="doSearch()">
+      <button onclick="document.getElementById('search-input').value='';doSearch();" style="font-size:13px;padding:6px 10px;">クリア</button>
+    </div>
+    <div id="search-results" style="max-height:280px;overflow-y:auto;"></div>
+  </div>
 </div>
 
 <!-- ① 初期手牌 -->
@@ -275,6 +305,15 @@ body.playing-mode .wrap{padding-top:76px;padding-bottom:20px;}
     <div id="rsum-warn" class="st"></div>
     <button class="pri rbtn" onclick="goFinal()">② 終局データの入力へ →</button>
   </div>
+</div>
+
+<!-- フローティング牌キーボード（終局入力画面用） -->
+<div id="float-kbd">
+  <div class="fk-header">
+    <span class="fk-target-label" id="fk-target-label">入力欄を選択してください</span>
+    <button class="fk-close" onclick="closeFloatKbd()">× 閉じる</button>
+  </div>
+  <div id="fk-kbd-content"></div>
 </div>
 
 <!-- ② 終局データ -->
@@ -382,9 +421,10 @@ body.playing-mode .wrap{padding-top:76px;padding-bottom:20px;}
     <div style="overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead><tr style="background:var(--sf2);">
-        <th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--bd);font-weight:500;color:var(--tx2);">プレイヤー</th>
+        <th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--bd);font-weight:500;color:var(--tx2);">席</th>
+        <th style="padding:6px 10px;text-align:left;border-bottom:1px solid var(--bd);font-weight:500;color:var(--tx2);">名前 / ID</th>
         <th style="padding:6px 10px;text-align:center;border-bottom:1px solid var(--bd);font-weight:500;color:var(--tx2);">開始点数</th>
-        <th style="padding:6px 10px;text-align:center;border-bottom:1px solid var(--bd);font-weight:500;color:var(--tx2);">終了点数（自動計算）</th>
+        <th style="padding:6px 10px;text-align:center;border-bottom:1px solid var(--bd);font-weight:500;color:var(--tx2);">終了（自動計算）</th>
       </tr></thead>
       <tbody id="score-table-body"></tbody>
     </table>
@@ -477,6 +517,7 @@ body.playing-mode .wrap{padding-top:76px;padding-bottom:20px;}
       <button onclick="generateReport()" style="background:var(--r-bg);border-color:var(--r);color:var(--r);font-size:14px;padding:10px 20px;">📄 レポートを生成</button>
       <button onclick="saveToLocalStorage()" style="background:var(--g-bg);border-color:var(--g);color:var(--g);font-size:14px;padding:10px 20px;">💾 ブラウザに保存</button>
       <button onclick="exportJSON()" style="background:var(--b-bg);border-color:var(--b);color:var(--b);font-size:14px;padding:10px 20px;">📤 JSONで書き出し</button>
+      <button onclick="exportMjai()" style="background:var(--tl-bg);border-color:var(--tl);color:var(--tl);font-size:14px;padding:10px 20px;">🀄 mjai形式で書き出し</button>
       <button onclick="location.reload()" style="font-size:14px;padding:10px 20px;">↩ 最初からやり直す</button>
     </div>
   </div>
@@ -579,7 +620,7 @@ function discHTML(disc,hlLast,nakiSet,riichiIdx,nakiInfo){
   }
   return html+"</div>";
 }
-function meldHTML(melds){
+function meldHTML(melds,forReport){
   if(!melds||!melds.length)return "";
   return melds.map(function(m){
     const lbl={pon:"ポン",chi:"チー",kan:"カン",ankan:"暗カン"}[m.type]||m.type;
@@ -589,12 +630,20 @@ function meldHTML(melds){
     if(m.type!=="ankan"&&!m.isAnkan&&m.nakiIdxFixed!=null){
       var fromMap={0:"上",1:"対",2:"下"};
       var fromStr=fromMap[m.nakiIdxFixed]||"";
-      if(fromStr)fromLabel='<span style="font-size:9px;color:var(--a-t);font-weight:700;margin-right:1px;">'+fromStr+'</span>';
+      if(fromStr){
+        var fromColor=forReport?"#b08030":"var(--a-t)";
+        fromLabel='<span style="font-size:9px;color:'+fromColor+';font-weight:700;margin-right:1px;">'+fromStr+'</span>';
+      }
     }
     // 牌列（nakiIdxの牌をハイライト）
     const tilesPart=(m.tiles||[]).map(function(t,ti){
       const e=te(t);
       if(ti===nakiIdx&&nakiIdx>=0){
+        // レポートでは薄い枠線のみ、通常画面では背景色あり
+        if(forReport){
+          return '<span style="display:inline-block;border:1.5px solid #c8922a;border-radius:3px;line-height:1;padding:0 1px;">'
+            +e+'</span>';
+        }
         return '<span style="display:inline-block;background:var(--a-bg);border:1.5px solid var(--a);border-radius:3px;line-height:1;">'
           +e+'</span>';
       }
@@ -806,7 +855,10 @@ function showPhase(id){
   ["ph-input","ph-final","ph-player"].forEach(function(p){
     document.getElementById(p).style.display=p===id?"block":"none";
   });
+  // 再生画面以外はフロートKBDを非表示
   var isPlayer=id==="ph-player";
+  // 入力/終局画面に移るときはフロートKBDをリセット（再表示に備えて閉じる）
+  if(!isPlayer)closeFloatKbd();
   document.getElementById("float-ctrl").style.display=isPlayer?"block":"none";
   var fy=document.getElementById("float-yama");
   var fyBtn=document.getElementById("btn-yama-float");
@@ -865,6 +917,8 @@ function restoreFormFromGameData(){
     var sc=ps[w]||{};
     var startEl=document.getElementById("sc-start-"+w);
     if(startEl&&sc.start!=null)startEl.value=sc.start;
+    var nameEl=document.getElementById("sc-name-"+w);
+    if(nameEl&&sc.name)nameEl.value=sc.name;
   });
   calcEndScores();
   // 各プレイヤーデータを復元（buildFinalInputsが呼ばれた後）
@@ -874,7 +928,7 @@ function restoreFormFromGameData(){
     var melds=gameData.players[w]?.melds||[];
     if(hand.length||melds.length)playerInputPhase[w]=1;
   });
-  buildFinalInputs();
+  buildFinalInputs(true);
   setTimeout(function(){
     WE.forEach(function(w){
       var disc=gameData.discards[w]||[];
@@ -901,7 +955,7 @@ function restoreFormFromGameData(){
       var riichiEl=document.getElementById("fd-riichi-"+w);
       if(riichiEl&&riichiIdx>=0)riichiEl.value=riichiIdx;
       // プレビュー更新
-      updMeldPrev(w);
+      updFP("disc",w); updFP("hand",w); updFP("tsumo",w); updMeldPrev(w);
     });
     // 点数も再設定
     var ps2=gameData.playerScores||{};
@@ -909,6 +963,8 @@ function restoreFormFromGameData(){
       var sc2=ps2[w]||{};
       var startEl=document.getElementById("sc-start-"+w);
       if(startEl&&sc2.start!=null)startEl.value=sc2.start;
+      var nameEl=document.getElementById("sc-name-"+w);
+      if(nameEl&&sc2.name)nameEl.value=sc2.name;
     });
     calcEndScores();
   },50);
@@ -946,7 +1002,6 @@ function renderInput(){
     +' onfocus="openInitKbd(\''+w+'\')">'+cur13+'</textarea>'
     +'<div class="hprev" id="hp-init-'+w+'">'+th(initHands[w]||[])+'</div>'
     +'<div id="warn-init-'+w+'" class="st" style="margin-top:4px;"></div>'
-    +'<div id="kbd-init-'+w+'"></div>'
     +'<div style="display:flex;gap:8px;margin-top:10px;">'
     +(idx>0?'<button style="flex:0 0 auto;font-size:13px;padding:9px 14px;color:var(--tx3);" onclick="backPlayer(\''+w+'\')">← 戻る</button>':'')
     +'<button class="grn rbtn '+(readyFlags[w]?"done":"")
@@ -970,37 +1025,6 @@ function updInitPrev(w){
     if(warns.length){wel.className="st warn";wel.textContent="⚠️ "+warns.join("、")+"になっています";}
     else{wel.className="st";wel.textContent="";}
   }
-}
-
-function openInitKbd(w){
-  kbdTarget={taId:"ta-init-"+w,field:"init",wind:w};
-  const slot=document.getElementById("kbd-init-"+w);
-  if(!slot)return;
-  slot.innerHTML=renderSimpleKbd(w);
-}
-
-// シンプル牌キーボード（牌ボタン＋スペース・削除のみ）
-function renderSimpleKbd(wind){
-  const tab=KBD_TABS.find(function(t){return t.id===kbdTab;})||KBD_TABS[0];
-  const tabsHtml=KBD_TABS.map(function(t){
-    return '<button class="kbd-tab'+(t.id===kbdTab?" on":"")+'" onclick="switchInitKbdTab(\''+t.id+'\',\''+wind+'\')" ontouchstart="">'+t.label+'</button>';
-  }).join("");
-  const tilesHtml=tab.tiles.map(function(tile){
-    return '<button class="tile-btn" onclick="insertTile(\''+tile+'\')" ontouchstart="">'+te(tile)+'</button>';
-  }).join("");
-  return '<div class="kbd-wrap">'
-    +'<div class="kbd-tabs">'+tabsHtml+'</div>'
-    +'<div class="kbd-row">'+tilesHtml+'</div>'
-    +'<div class="util-row">'
-    +'<button class="util-btn spc" onclick="insertTile(\' \')">スペース</button>'
-    +'<button class="util-btn del" onclick="deleteTile()">⌫ 1枚消す</button>'
-    +'</div></div>';
-}
-
-function switchInitKbdTab(tabId,wind){
-  kbdTab=tabId;
-  const slot=document.getElementById("kbd-init-"+wind);
-  if(slot)slot.innerHTML=renderSimpleKbd(wind);
 }
 
 function insertTile(tile){
@@ -1361,31 +1385,34 @@ function togglePointMode(checked){
   // テーブル再描画（buildFinalInputsと同じ構造）
   var scoreBody=document.getElementById("score-table-body");
   if(scoreBody){
+    // 既存の名前値を保存
+    var nameVals={};
+    WE.forEach(function(w){var n=document.getElementById('sc-name-'+w);if(n)nameVals[w]=n.value;});
     scoreBody.innerHTML=WE.map(function(w){
       var ph=checked?'例: 250':'例: 25000';
       var st=checked?1:100;
       return '<tr>'
-        +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);color:var(--tx2);">'+te(WJ[w])+' '+WJ[w]+'家</td>'
+        +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);color:var(--tx2);white-space:nowrap;">'+te(WJ[w])+' '+WJ[w]+'家</td>'
+        +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);">'
+        +'<input type="text" id="sc-name-'+w+'" placeholder="名前/ID（任意）" style="width:100%;min-width:80px;font-size:13px;" oninput=""></td>'
         +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);text-align:center;">'
-        +'<input type="number" id="sc-start-'+w+'" placeholder="'+ph+'" step="'+st+'" style="width:90px;text-align:center;" oninput="calcEndScores()"></td>'
+        +'<input type="number" id="sc-start-'+w+'" placeholder="'+ph+'" step="'+st+'" style="width:80px;text-align:center;" oninput="calcEndScores()"></td>'
         +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);text-align:center;">'
         +'<span id="sc-end-display-'+w+'" style="font-size:13px;color:var(--tx2);">-</span>'
         +'<input type="hidden" id="sc-end-'+w+'"></td>'
         +'</tr>';
     }).join("");
-    // 開始値を変換して復元
+    // 開始値・名前を変換して復元
     WE.forEach(function(w){
       var sv=startVals[w];
-      if(sv!=null){
-        var el=document.getElementById('sc-start-'+w);
-        if(el)el.value=checked?(sv/100).toFixed(0):(sv*100);
-      }
+      if(sv!=null){var el=document.getElementById('sc-start-'+w);if(el)el.value=checked?(sv/100).toFixed(0):(sv*100);}
+      if(nameVals[w]){var nl=document.getElementById('sc-name-'+w);if(nl)nl.value=nameVals[w];}
     });
     calcEndScores();
   }
 }
 
-function buildFinalInputs(){
+function buildFinalInputs(keepPhase){
   const scoreBody=document.getElementById("score-table-body");
   if(scoreBody){
     scoreBody.innerHTML=WE.map(function(w){
@@ -1393,17 +1420,21 @@ function buildFinalInputs(){
       var ph=isPoint?'例: 250':'例: 25000';
       var st=isPoint?1:100;
       return '<tr>'
-        +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);color:var(--tx2);">'+te(WJ[w])+' '+WJ[w]+'家</td>'
+        +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);color:var(--tx2);white-space:nowrap;">'+te(WJ[w])+' '+WJ[w]+'家</td>'
+        +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);">'
+        +'<input type="text" id="sc-name-'+w+'" placeholder="名前/ID（任意）" style="width:100%;min-width:80px;font-size:13px;" oninput=""></td>'
         +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);text-align:center;">'
-        +'<input type="number" id="sc-start-'+w+'" placeholder="'+ph+'" step="'+st+'" style="width:90px;text-align:center;" oninput="calcEndScores()"></td>'
+        +'<input type="number" id="sc-start-'+w+'" placeholder="'+ph+'" step="'+st+'" style="width:80px;text-align:center;" oninput="calcEndScores()"></td>'
         +'<td style="padding:6px 10px;border-bottom:.5px solid var(--bd);text-align:center;">'
         +'<span id="sc-end-display-'+w+'" style="font-size:13px;color:var(--tx2);">-</span>'
         +'<input type="hidden" id="sc-end-'+w+'"></td>'
         +'</tr>';
     }).join("");
   }
-  WE.forEach(function(w){playerInputPhase[w]=0;});
-  manualInputAll=false;
+  if(!keepPhase){
+    WE.forEach(function(w){playerInputPhase[w]=0;});
+    manualInputAll=false;
+  }
   renderAllPlayerInputs();
 }
 
@@ -1485,7 +1516,7 @@ function buildOnePlayerInput(w){
     html+='<div style="margin-top:8px;">'
       +'<button onclick="advancePhase(\''+w+'\',1)" style="font-size:13px;padding:8px 20px;background:var(--b);border-color:var(--b);color:#e6f1fb;border-radius:var(--ra);cursor:pointer;border:.5px solid var(--b);">最終手牌・副露を入力する →</button>'
       +'</div>';
-    return html+'<div id="kbd-slot-'+w+'" style="margin-top:4px;"></div></div>';
+    return html+'</div>';
   }
 
   // ── 最終手牌＋副露（phase>=1）──
@@ -1505,7 +1536,7 @@ function buildOnePlayerInput(w){
     +' onfocus="openFinalKbd(\'fd-meld-'+w+'\',\'meld\',\''+w+'\')"></textarea>'
     +'<div id="fp-meld-'+w+'" style="margin-top:6px;min-height:20px;font-size:17px;line-height:1.5;"></div>';
 
-  return html+'<div id="kbd-slot-'+w+'" style="margin-top:4px;"></div></div>';
+  return html+'</div>';
 }
 function advancePhase(w,phase){
   var saved=collectAllValues();
@@ -1974,39 +2005,68 @@ function selectChi(w,oldTok,newTok){selectMeld(w,oldTok,newTok);}
 
 
 
-// 終局入力キーボード（特殊ボタン付き）
+// 終局入力キーボード → フローティングパネルに表示
+var floatKbdOpen=false;
 function openFinalKbd(taId,field,wind){
   kbdTarget={taId,field,wind};
-  const slot=document.getElementById("kbd-slot-"+wind);
-  if(!slot)return;
-  slot.innerHTML=renderFinalKbd(wind);
+  showFloatKbd(wind);
 }
 
-function renderFinalKbd(wind){
+var FIELD_LABELS={tsumo:"ツモ牌",disc:"捨て牌",hand:"最終手牌",meld:"副露",init:"初期手牌"};
+function showFloatKbd(wind){
+  floatKbdOpen=true;
+  document.body.classList.add("kbd-open");
+  var fk=document.getElementById("float-kbd");
+  if(fk)fk.style.display="block";
+  var lbl=document.getElementById("fk-target-label");
+  if(lbl&&kbdTarget){
+    lbl.textContent=(wind?WJ[wind]+"家 ":"")+( FIELD_LABELS[kbdTarget.field]||kbdTarget.field);
+  }
+  renderFloatKbd(wind);
+}
+
+function closeFloatKbd(){
+  floatKbdOpen=false;
+  document.body.classList.remove("kbd-open");
+  var fk=document.getElementById("float-kbd");
+  if(fk)fk.style.display="none";
+}
+
+function renderFloatKbd(wind){
   const tab=KBD_TABS.find(function(t){return t.id===kbdTab;})||KBD_TABS[0];
   const tabsHtml=KBD_TABS.map(function(t){
-    return '<button class="kbd-tab'+(t.id===kbdTab?" on":"")+'" onclick="switchFinalKbdTab(\''+t.id+'\',\''+wind+'\')" ontouchstart="">'+t.label+'</button>';
+    return '<button class="kbd-tab'+(t.id===kbdTab?" on":"")+'" onclick="switchFloatKbdTab(\''+t.id+'\',\''+wind+'\')" ontouchstart="">'+t.label+'</button>';
   }).join("");
   const tilesHtml=tab.tiles.map(function(tile){
     return '<button class="tile-btn" onclick="insertTile(\''+tile+'\')" ontouchstart="">'+te(tile)+'</button>';
   }).join("");
-  const specHtml=
-    '<button class="sp-btn pon" onclick="insertText(\'pon:\')">ポン</button>'
-    +'<button class="sp-btn chi" onclick="insertText(\'chi:\')">チー</button>'
-    +'<button class="sp-btn kan" onclick="insertText(\'kan:\')">カン</button>'
-    +'<button class="util-btn spc" onclick="insertTile(\' \')">スペース</button>'
-    +'<button class="util-btn del" onclick="deleteTile()">⌫</button>';
-  return '<div class="kbd-wrap">'
+  // 副露フィールドのときはポン/チー/カンボタンを追加
+  const isMeld=kbdTarget&&kbdTarget.field==="meld";
+  const specHtml=isMeld
+    ?'<button class="sp-btn pon" onclick="insertText(\'pon:\')">ポン</button>'
+      +'<button class="sp-btn chi" onclick="insertText(\'chi:\')">チー</button>'
+      +'<button class="sp-btn kan" onclick="insertText(\'kan:\')">カン</button>'
+      +'<button class="util-btn spc" onclick="insertTile(\' \')">SPC</button>'
+      +'<button class="util-btn del" onclick="deleteTile()">⌫</button>'
+    :'<button class="util-btn spc" onclick="insertTile(\' \')">スペース</button>'
+      +'<button class="util-btn del" onclick="deleteTile()">⌫ 1枚消す</button>';
+  document.getElementById("fk-kbd-content").innerHTML=
+    '<div class="kbd-wrap" style="margin-top:0;">'
     +'<div class="kbd-tabs">'+tabsHtml+'</div>'
     +'<div class="kbd-row">'+tilesHtml+'</div>'
     +'<div class="util-row">'+specHtml+'</div>'
     +'</div>';
 }
 
-function switchFinalKbdTab(tabId,wind){
+function switchFloatKbdTab(tabId,wind){
   kbdTab=tabId;
-  const slot=document.getElementById("kbd-slot-"+wind);
-  if(slot)slot.innerHTML=renderFinalKbd(wind);
+  renderFloatKbd(wind);
+}
+
+// 初期手牌入力でもフローティングKBDを使う
+function openInitKbd(w){
+  kbdTarget={taId:"ta-init-"+w,field:"init",wind:w};
+  showFloatKbd(w);
 }
 
 function insertText(text){
@@ -2080,13 +2140,12 @@ function buildFromText(){
   var _pm=document.getElementById('chk-point-mode')?.checked;
   WE.forEach(function(w){
     var sv=document.getElementById("sc-start-"+w)?.value;
-    // 終了点数は hidden input から取得（自動計算済みの実際の点数）
     var ev=document.getElementById("sc-end-"+w)?.value;
+    var nm=document.getElementById("sc-name-"+w)?.value||"";
     var s=sv?parseFloat(sv):null;
     var e=ev?parseFloat(ev):null;
-    // ポイントモードなら開始点数のみ100倍（終了は calcEndScores で既に変換済み）
     if(_pm&&s!=null)s=Math.round(s*100);
-    playerScores[w]={start:s,end:e,pointMode:_pm?true:false};
+    playerScores[w]={start:s,end:e,pointMode:_pm?true:false,name:nm};
   });
 
   // 流局テンパイ判定: チェックボックス優先、なければ点数増減で判定
@@ -2579,7 +2638,7 @@ function renderMeta(){
           ?'<span style="font-size:11px;color:var(--tx3);">→</span><span style="font-weight:500;color:'+(sc.end>sc.start?'var(--g)':sc.end<sc.start?'var(--r)':'var(--tx)')+';">'+fmtSc(sc.end)+'</span>'
           :(sc.end?'<span style="font-weight:500;">'+fmtSc(sc.end)+'</span>':'');
         return '<div style="background:var(--sf);border-radius:6px;padding:5px 10px;border:.5px solid var(--bd);">'
-          +'<span style="font-size:11px;color:var(--tx3);">'+te(WJ[w])+WJ[w]+'家</span><br>'
+          +'<span style="font-size:11px;color:var(--tx3);">'+te(WJ[w])+WJ[w]+'家'+(sc.name?' <b style="color:var(--tx2);">'+sc.name+'</b>':'')+'</span><br>'
           +'<span style="font-size:13px;">'+(sc.start?fmtSc(sc.start):'-')+'</span>'
           +(arrow?' '+arrow:'')
           +'</div>';
@@ -2703,7 +2762,7 @@ function renderStep(idx){
       var dispH=currentH!==null?currentH:finalH;
       return '<div class="prow'+(isWin?" win":isLoser?" ron-loser":isAct?" act":"")+'"><div class="prow-hdr">'
         +'<span class="dot'+(isAct?" act":"")+'"></span>'
-        +'<span>'+WJ[wind]+'家'+(isWin?" 🏆":"")+'</span>'
+        +'<span>'+WJ[wind]+'家'+(playerNameDisp?' <span style="font-size:11px;font-weight:400;color:var(--tx3);">'+playerNameDisp+'</span>':'')+(isWin?" 🏆":"")+'</span>'
         +(tpBadgeH?' '+tpBadgeH:'')
         +(pm.length?'<span class="naki-label">'+mHtml+'</span>':"")
         +'</div><div style="padding:4px 10px;">'
@@ -2711,9 +2770,11 @@ function renderStep(idx){
         +'</div></div>';
     }
 
+    const ps_w=(gameData.playerScores||{})[wind]||{};
+    const playerNameDisp=ps_w.name||"";
     return '<div class="prow'+(isWin?" win":isLoser?" ron-loser":isAct?" act":"")+'"><div class="prow-hdr">'
       +'<span class="dot'+(isAct?" act":"")+'"></span>'
-      +'<span>'+WJ[wind]+'家'+(isWin?" 🏆":"")+'</span>'
+      +'<span>'+WJ[wind]+'家'+(playerNameDisp?' <span style="font-size:11px;font-weight:400;color:var(--tx3);">'+playerNameDisp+'</span>':'')+(isWin?" 🏆":"")+'</span>'
       +(isAct&&s.type==="dahai"?'<span class="act-label">打牌: '+te(s.hlTile)+'</span>':"")
       +(isWin&&sc?'<span style="font-size:11px;padding:2px 7px;border-radius:20px;background:var(--a-bg);color:var(--a-t);">'+sc+'点</span>':"")
       +(pm.length?'<span class="naki-label">'+pm.map(function(m){return{pon:"ポン",chi:"チー",kan:"カン",ankan:"暗カン"}[m.type]||m.type;}).join(" ")+'</span>':"")
@@ -2977,7 +3038,7 @@ function buildReportHTML(){
     const riichiIdx=gameData.players[w]?.riichiIdx??-1;
     const isWin=m.winner===w;
     const isLoser=m.loser===w;
-    const mHtml=meldHTML(pm);
+    const mHtml=meldHTML(pm,true);
     const wNakiInfo=finalNakiInfo[w]||{};
 
     // セルサイズ: 印刷時に1ページに収まるよう調整
@@ -3142,6 +3203,7 @@ function buildReportHTML(){
       :'';
 
     var sc2=ps2[w]||{};
+    var playerName=sc2.name||"";
     var diff2=(sc2.start!=null&&sc2.end!=null)?(sc2.end-sc2.start):null;
     var diff2Str=diff2!==null?(diff2>=0?'+'+diff2.toLocaleString():''+diff2.toLocaleString()):'';
     var diff2Color=diff2===null?'#888':diff2>0?'#3b6d11':diff2<0?'#a32d2d':'#888';
@@ -3156,6 +3218,7 @@ function buildReportHTML(){
       +'background:'+(isWin?"#eaf3de":isLoser?"#fcebeb":"#fff")+';page-break-inside:avoid;">'
       +'<div style="display:flex;align-items:center;margin-bottom:1px;">'
       +'<div style="font-size:11px;font-weight:600;flex:1;">'+te(WJ[w])+' '+WJ[w]+'家'
+      +(playerName?' <span style="font-size:10px;font-weight:400;color:#555;background:#f0f0ee;border-radius:3px;padding:0 4px;">'+playerName.replace(/</g,'&lt;')+'</span>':'')
       +(isWin?" 🏆":"")+(isLoser?" ⚡放銃":"")+tenpaiStr+'</div>'
       +scoreCell+'</div>'
       +rowHtml('初期', initCells, '')
@@ -3242,7 +3305,102 @@ function downloadReport(){
   },1500);
 }
 
-// ─── localStorage 保存・復元 ───
+// ─── JSON複数ファイル検索 ───
+var searchLibrary=[];// {filename, gameData}[]
+
+function importMultipleJSON(input){
+  var files=Array.from(input.files);
+  if(!files.length)return;
+  var loaded=0,total=files.length;
+  // 既存のライブラリに追記（重複はスキップ）
+  files.forEach(function(file){
+    var reader=new FileReader();
+    reader.onload=function(e){
+      loaded++;
+      try{
+        var obj=JSON.parse(e.target.result);
+        if(obj.gameData){
+          // 重複チェック（タイトル+日付+bakaze+kyokuで判定）
+          var m=obj.gameData.meta;
+          var key=(m.title||"")+"_"+(m.date||"")+"_"+(m.bakaze||"")+"_"+(m.kyoku||"");
+          if(!searchLibrary.some(function(x){
+            var xm=x.gameData.meta;
+            return (xm.title||"")+"_"+(xm.date||"")+"_"+(xm.bakaze||"")+"_"+(xm.kyoku||"")=== key;
+          })){
+            searchLibrary.push({filename:file.name,gameData:obj.gameData});
+          }
+        }
+      }catch(err){}
+      if(loaded===total){
+        input.value='';
+        document.getElementById("search-panel").style.display="block";
+        document.getElementById("search-count").textContent=searchLibrary.length+"件読み込み済み";
+        doSearch();
+      }
+    };
+    reader.readAsText(file);
+  });
+}
+
+function doSearch(){
+  var q=(document.getElementById("search-input")?.value||"").trim().toLowerCase();
+  var results=searchLibrary.filter(function(item){
+    var m=item.gameData.meta;
+    var ps=item.gameData.playerScores||{};
+    var searchStr=[
+      m.title||"",m.date||"",m.bakaze||"",m.kyoku||"",m.honba||"",
+      item.filename
+    ].join(" ").toLowerCase();
+    // プレイヤー名も検索対象
+    WE.forEach(function(w){if(ps[w]&&ps[w].name)searchStr+=" "+ps[w].name.toLowerCase();});
+    return !q||searchStr.indexOf(q)>=0;
+  });
+  var el=document.getElementById("search-results");
+  if(!el)return;
+  if(!searchLibrary.length){el.innerHTML='<div style="font-size:13px;color:var(--tx3);padding:8px;">JSONファイルを読み込んでください</div>';return;}
+  if(!results.length){el.innerHTML='<div style="font-size:13px;color:var(--tx3);padding:8px;">該当なし</div>';return;}
+  el.innerHTML=results.map(function(item,idx){
+    var m=item.gameData.meta;
+    var ps=item.gameData.playerScores||{};
+    var names=WE.map(function(w){return ps[w]&&ps[w].name?ps[w].name:"";}).filter(Boolean).join(" / ");
+    var title=m.title||(m.bakaze+"風"+m.kyoku+"局");
+    var rt=m.result_type;
+    var winner=m.winner;
+    var resText=rt==="ryukyoku"?"流局":winner?(WJ[winner]+"家 "+(rt==="tsumo"?"ツモ":"ロン")):"";
+    var resColor=winner?"var(--g)":rt==="ryukyoku"?"var(--tx3)":"var(--tx2)";
+    return '<div style="padding:7px 10px;border-bottom:.5px solid var(--bd);cursor:pointer;'
+      +'background:var(--sf);transition:background .1s;" '
+      +'onmouseover="this.style.background=\'var(--sf2)\'" '
+      +'onmouseout="this.style.background=\'var(--sf)\'" '
+      +'onclick="loadSearchResult('+searchLibrary.indexOf(item)+')">'
+      +'<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">'
+      +'<span style="font-size:13px;font-weight:500;">'+title+'</span>'
+      +(m.date?'<span style="font-size:11px;color:var(--tx3);">'+m.date.replace(/-/g,'/')+'</span>':'')
+      +'<span style="font-size:11px;color:'+resColor+';">'+resText+'</span>'
+      +'</div>'
+      +(names?'<div style="font-size:11px;color:var(--tx3);margin-top:1px;">👤 '+names+'</div>':'')
+      +'<div style="font-size:10px;color:var(--tx3);margin-top:1px;">'+item.filename+'</div>'
+      +'</div>';
+  }).join("");
+}
+
+function loadSearchResult(idx){
+  var item=searchLibrary[idx];
+  if(!item)return;
+  gameData=item.gameData;
+  steps=buildSteps(gameData);
+  document.getElementById("step-slider").max=steps.length-1;
+  tsumoVisible={east:false,south:false,west:false,north:false};
+  showPhase("ph-player");
+  renderPlayer();
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+function clearSearchPanel(){
+  searchLibrary=[];
+  document.getElementById("search-panel").style.display="none";
+  document.getElementById("search-input").value="";
+}
 const LS_KEY="mahjong_saved_game";
 
 function exportJSON(){
@@ -3256,6 +3414,98 @@ function exportJSON(){
   a.download='mahjong_'+title+'.json';
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ─── mjai形式エクスポート ───
+// mjai は天鳳/NAGAが読める標準的なJSONL形式
+// https://github.com/smly/mjai.app
+function toMjaiTile(t){
+  if(!t||t==="?")return null;
+  if(t==="r5m")return"5mr";
+  if(t==="r5p")return"5pr";
+  if(t==="r5s")return"5sr";
+  var nm=t.match(/^(\d)([mps])$/);if(nm)return nm[1]+nm[2];
+  var ji={東:"1z",南:"2z",西:"3z",北:"4z",白:"5z",発:"6z",中:"7z"};
+  return ji[t]||null;
+}
+function exportMjai(){
+  if(!gameData){alert("対局データがありません");return;}
+  var m=gameData.meta;
+  var ps=gameData.playerScores||{};
+  var players=WE.map(function(w){return (ps[w]&&ps[w].name)||WJ[w]+"家";});
+  var events=[];
+
+  // start_game
+  events.push({type:"start_game",id:0,names:players});
+  // start_kyoku
+  var doraMarkers=(m.dora_indicators||[]).map(toMjaiTile).filter(Boolean);
+  var startScores=WE.map(function(w){return (ps[w]&&ps[w].start!=null)?ps[w].start:25000;});
+  events.push({type:"start_kyoku",
+    bakaze:["E","S","W","N"][["東","南","西","北"].indexOf(m.bakaze)]||"E",
+    kyoku:m.kyoku||1,honba:m.honba||0,kyotaku:0,
+    oya:0,dora_marker:doraMarkers[0]||null,
+    tehais:WE.map(function(w){return (gameData.initHands[w]||[]).map(toMjaiTile).filter(Boolean);})
+  });
+
+  // イベントを捨て牌順に再構築
+  var maxDisc=Math.max(0,...WE.map(function(w){return(gameData.discards[w]||[]).length;}));
+  var tsumos=WE.map(function(w){return gameData.players[w]?.tsumo||[];});
+  var discCounts=WE.map(function(){return 0;});
+  var meldIdxs=WE.map(function(){return 0;});
+
+  for(var turn=0;turn<maxDisc;turn++){
+    for(var wi=0;wi<4;wi++){
+      var w=WE[wi];
+      var disc=gameData.discards[w]||[];
+      if(turn>=disc.length)continue;
+      var t=tsumos[wi][turn]||null;
+      if(t){
+        var mt=toMjaiTile(t);
+        if(mt)events.push({type:"tsumo",actor:wi,pai:mt});
+      }
+      var dt=disc[turn];
+      var mdt=toMjaiTile(dt);
+      if(mdt)events.push({type:"dahai",actor:wi,pai:mdt,tsumogiri:t&&normalTile(t)===normalTile(dt)});
+    }
+  }
+
+  // 結果
+  var rt=m.result_type;
+  if(rt==="ryukyoku"){
+    var tenpai=m.tenpai||{};
+    events.push({type:"ryukyoku",
+      type_:null,
+      scores:WE.map(function(w){return (ps[w]&&ps[w].end!=null)?ps[w].end:0;}),
+      deltas:WE.map(function(w){
+        var s=ps[w]||{};return(s.start!=null&&s.end!=null)?s.end-s.start:0;
+      }),
+      tenpais:WE.map(function(w){return tenpai[w]===true;})
+    });
+  } else if(m.winner){
+    var winnerIdx=WE.indexOf(m.winner);
+    var loserIdx=m.loser?WE.indexOf(m.loser):-1;
+    var scoreVal=parseInt((m.score||"0").replace(/[^\d]/g,""))||0;
+    events.push({type:"hora",
+      actor:winnerIdx,
+      target:rt==="tsumo"?winnerIdx:loserIdx,
+      pai:rt==="tsumo"?toMjaiTile((gameData.players[m.winner]?.tsumo||[]).slice(-1)[0]):"?",
+      scores:WE.map(function(w){return (ps[w]&&ps[w].end!=null)?ps[w].end:0;}),
+      deltas:WE.map(function(w){
+        var s=ps[w]||{};return(s.start!=null&&s.end!=null)?s.end-s.start:0;
+      }),
+      ura_markers:(m.ura_dora_indicators||[]).map(toMjaiTile).filter(Boolean)
+    });
+  }
+  events.push({type:"end_game"});
+
+  var jsonl=events.map(function(e){return JSON.stringify(e);}).join("\n");
+  var title=(m.title||m.bakaze+'風'+m.kyoku+'局').replace(/[/\:*?"<>|]/g,'_');
+  var blob=new Blob([jsonl],{type:'application/json'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;a.download='mjai_'+title+'.json';a.click();
+  URL.revokeObjectURL(url);
+  alert('mjai形式でエクスポートしました。\n天鳳形式（.mjlog）への変換は別途ツールが必要です。\nNAGAはmjai形式を直接読み込めます。');
 }
 
 function importJSON(input){
