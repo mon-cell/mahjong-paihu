@@ -2972,6 +2972,8 @@ function renderStep(idx){
     const hasTsumo=tsumoH.length>0;
     const showTsumo=tsumoVisible[wind]&&hasTsumo;
     const handsOnlyMode=(currentViewTab==='hands');
+    const ps_w=(gameData.playerScores||{})[wind]||{};
+    const playerNameDisp=ps_w.name||"";
 
     // ツモ＋捨てペア列
     function tsumoDiscHTML(){
@@ -3060,8 +3062,6 @@ function renderStep(idx){
         +'</div></div>';
     }
 
-    const ps_w=(gameData.playerScores||{})[wind]||{};
-    const playerNameDisp=ps_w.name||"";
     return '<div class="prow'+(isWin?" win":isLoser?" ron-loser":isAct?" act":"")+'"><div class="prow-hdr">'
       +'<span class="dot'+(isAct?" act":"")+'"></span>'
       +'<span>'+WJ[wind]+'家'+(playerNameDisp?' <span style="font-size:11px;font-weight:400;color:var(--tx3);">'+playerNameDisp+'</span>':'')+(isWin?" 🏆":"")+'</span>'
