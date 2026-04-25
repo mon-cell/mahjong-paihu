@@ -526,8 +526,26 @@ body.kbd-open #ph-final{padding-bottom:175px;}
       <button onclick="generateReport()" style="background:var(--r-bg);border-color:var(--r);color:var(--r);font-size:14px;padding:10px 20px;">📄 レポートを生成</button>
       <button onclick="saveToLocalStorage()" style="background:var(--g-bg);border-color:var(--g);color:var(--g);font-size:14px;padding:10px 20px;">💾 ブラウザに保存</button>
       <button onclick="exportJSON()" style="background:var(--b-bg);border-color:var(--b);color:var(--b);font-size:14px;padding:10px 20px;">📤 JSONで書き出し</button>
+      <button onclick="shareByURL()" style="background:#e8f5e9;border-color:#43a047;color:#2e7d32;font-size:14px;padding:10px 20px;">🔗 URLで共有</button>
       <button onclick="exportMjai()" style="background:var(--tl-bg);border-color:var(--tl);color:var(--tl);font-size:14px;padding:10px 20px;">🀄 mjai形式で書き出し</button>
       <button onclick="location.reload()" style="font-size:14px;padding:10px 20px;">↩ 最初からやり直す</button>
+
+<!-- 共有URLモーダル -->
+<div id="share-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:var(--sf);border-radius:12px;padding:20px;max-width:520px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2);">
+    <div style="font-size:15px;font-weight:600;margin-bottom:4px;">🔗 対局を共有</div>
+    <div style="font-size:12px;color:var(--tx3);margin-bottom:12px;">このURLをLINEや他のアプリで送るだけで、相手がそのまま牌譜を再生できます。</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px;">
+      <input type="text" id="share-url-input" readonly
+        style="flex:1;font-size:11px;padding:8px;border-radius:6px;border:1.5px solid var(--bd2);background:var(--sf2);color:var(--tx2);word-break:break-all;">
+      <button onclick="copyShareURL()" id="share-copy-btn"
+        style="font-size:13px;padding:8px 14px;background:var(--b);border-color:var(--b);color:#e6f1fb;border-radius:6px;white-space:nowrap;">コピー</button>
+    </div>
+    <div id="share-url-warn" style="font-size:11px;color:var(--r);margin-bottom:8px;display:none;"></div>
+    <button onclick="document.getElementById('share-modal').style.display='none'"
+      style="width:100%;font-size:13px;padding:8px;color:var(--tx3);">閉じる</button>
+  </div>
+</div>
     </div>
   </div>
   <div class="card" id="yama-card" style="display:none;">
@@ -1068,7 +1086,29 @@ function meldToToken(m){
 }
 
 // ─── ① 初期手牌入力 ───
-(function init(){showPhase("ph-input");curInputWind="east";renderInput();})();
+(function init(){
+  // URLハッシュにデータがあれば牌譜を直接表示
+  try{
+    var hash=window.location.hash;
+    if(hash&&hash.startsWith("#d=")){
+      var b64=hash.slice(3);
+      var json=decodeURIComponent(escape(atob(b64)));
+      var obj=JSON.parse(json);
+      if(obj&&obj.gameData){
+        gameData=obj.gameData;
+        steps=buildSteps(gameData);
+        var sl=document.getElementById("step-slider");
+        if(sl)sl.max=steps.length-1;
+        tsumoVisible={east:false,south:false,west:false,north:false};
+        showPhase("ph-player");
+        renderPlayer();
+        history.replaceState(null,"",location.pathname+location.search);
+        return; // ph-inputは表示しない
+      }
+    }
+  }catch(e){/* ハッシュが壊れていても無視 */}
+  showPhase("ph-input");curInputWind="east";renderInput();
+})();
 
 function renderInput(){
   const w=curInputWind,idx=WE.indexOf(w);
@@ -3675,6 +3715,54 @@ function clearSearchPanel(){
   document.getElementById("search-input").value="";
 }
 const LS_KEY="mahjong_saved_game";
+
+// ─── URLベース共有 ───
+const SHARE_BASE="https://mon-cell.github.io/mahjong-paihu/";
+
+function shareByURL(){
+  if(!gameData){alert("対局データがありません");return;}
+  try{
+    var json=JSON.stringify({gameData:gameData});
+    var b64=btoa(unescape(encodeURIComponent(json)));
+    var url=SHARE_BASE+"#d="+b64;
+    var modal=document.getElementById("share-modal");
+    var input=document.getElementById("share-url-input");
+    var warn=document.getElementById("share-url-warn");
+    input.value=url;
+    warn.style.display="none";
+    if(url.length>8000){
+      warn.textContent="URLが長めです（"+url.length+"文字）。LINEで送れない場合はJSONファイルで共有してください。";
+      warn.style.display="block";
+    }
+    modal.style.display="flex";
+    setTimeout(function(){input.select();},50);
+  }catch(e){
+    alert("URL生成に失敗しました: "+e.message);
+  }
+}
+
+function copyShareURL(){
+  var input=document.getElementById("share-url-input");
+  var btn=document.getElementById("share-copy-btn");
+  if(!input)return;
+  var ok=function(){
+    btn.textContent="コピー済み ✓";
+    btn.style.background="#43a047";
+    btn.style.borderColor="#43a047";
+    setTimeout(function(){
+      btn.textContent="コピー";
+      btn.style.background="var(--b)";
+      btn.style.borderColor="var(--b)";
+    },2500);
+  };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(input.value).then(ok).catch(function(){
+      input.select();document.execCommand("copy");ok();
+    });
+  } else {
+    input.select();document.execCommand("copy");ok();
+  }
+}
 
 function exportJSON(){
   if(!gameData)return;
