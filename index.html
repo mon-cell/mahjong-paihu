@@ -628,6 +628,11 @@ function te(t){
   }
   return TE[t]||t;
 }
+// テキスト専用（desc/elog用）: HTMLタグなしで絵文字のみ返す
+function teText(t){
+  if(!t)return"";
+  return TE[t]||TE[t.replace(/^r/,"")]||t;
+}
 function th(arr,hlIdx,hlC){
   hlIdx=hlIdx??-1;hlC=hlC||"a";
   if(!arr||!arr.length)return '<span class="tunk">-</span>';
@@ -2702,18 +2707,18 @@ function buildSteps(gd){
       var ev2=meldEvents[ei];
       if(ev2.isAnkanEvent){
         var kTile=(ev2.meld.tiles||[])[0]||"";
-        var kTrig=ev2.meld.kanTriggerTile?("ツモ"+te(ev2.meld.kanTriggerTile)+"で"):"";
-        extraDesc+=" 【"+WJ[ev2.nakiWind]+"家 "+kTrig+"暗カン "+te(kTile)+"】";
+        var kTrig=ev2.meld.kanTriggerTile?("ツモ"+teText(ev2.meld.kanTriggerTile)+"で"):"";
+        extraDesc+=" 【"+WJ[ev2.nakiWind]+"家 "+kTrig+"暗カン "+teText(kTile)+"】";
       } else {
         var nType={pon:"ポン",chi:"チー",kan:"カン(大明槓)"}[ev2.meld.type]||ev2.meld.type;
         var nTile=(ev2.meld.tiles||[])[ev2.meld.nakiIdxFixed!=null?ev2.meld.nakiIdxFixed:0]||"";
         var fromWJ=ev2.discWind?WJ[ev2.discWind]+"家から":"";
-        extraDesc+=" 【"+WJ[ev2.nakiWind]+"家 "+nType+" "+te(nTile)+(fromWJ?" ("+fromWJ+")":"")+"】";
+        extraDesc+=" 【"+WJ[ev2.nakiWind]+"家 "+nType+" "+teText(nTile)+(fromWJ?" ("+fromWJ+")":"")+"】";
       }
       prevShownMeldFlags[ei]=true;
     });
 
-    result.push({type:"dahai",desc:WJ[wind]+"家 "+te(d)+" を打牌"+extraDesc,
+    result.push({type:"dahai",desc:WJ[wind]+"家 "+teText(d)+" を打牌"+extraDesc,
       discards:dc(ds),active:wind,hlWind:wind,hlTile:d,
       visibleMelds:vm,nakiSets:nakiSets,nakiInfo:nakiInfo,currentHands:cHands,
       ankanTsumoMarks:ankanTsumoMarks});
@@ -2936,7 +2941,7 @@ function renderStep(idx){
   const BL={init:"init",dahai:"dahai",agari:"agari",ryukyoku:"ryukyoku"};
   const LL={init:"配牌",dahai:"打牌",agari:"和了",ryukyoku:"流局"};
   document.getElementById("turn-lbl").textContent="手順 "+(idx+1)+" / "+steps.length;
-  document.getElementById("event-desc").textContent=s.desc;
+  document.getElementById("event-desc").innerHTML=s.desc;
   document.getElementById("turn-badge").className="badge "+(BL[s.type]||"init");
   document.getElementById("turn-badge").textContent=LL[s.type]||s.type;
   const sl=document.getElementById("step-slider");
@@ -3108,7 +3113,7 @@ function renderStep(idx){
   // フローティングバー同期
   document.getElementById("fc-slider").value=idx;
   document.getElementById("fc-pos").textContent=(idx+1)+" / "+steps.length;
-  document.getElementById("fc-desc").textContent=s.desc;
+  document.getElementById("fc-desc").innerHTML=s.desc;
   // ボタン無効化（メイン＋フロート両方）
   ["b-back","b-first","fc-back","fc-first"].forEach(function(id){
     const el=document.getElementById(id);if(el)el.disabled=idx===0;});
